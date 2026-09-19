@@ -1,0 +1,4 @@
+{% extends "envios/base.html" %}{% block conteudo %}<h2>Enviar arquivo</h2>
+<form method="post" enctype="multipart/form-data">{% csrf_token %}{{ formulario.as_p }}<button class="botao"
+        type="submit">Enviar</button><a href="{% url 'pagina_inicial' %}">Voltar</a></form>
+<p>Permitidos: PDF, PNG, JPG, TXT, DOCX e PPTX. Tamanho máximo: 10 MB.</p>{% endblock %}

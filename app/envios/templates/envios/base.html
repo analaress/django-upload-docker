@@ -1,0 +1,20 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Central de arquivos</title>
+    <link rel="stylesheet" href="{% static 'envios/estilos.css' %}">
+</head>
+
+<body>
+    <main class="cartao"><span class="etiqueta">Django + Docker Compose</span>
+        <h1>Central de arquivos</h1>
+        <p>Uploads persistentes com PostgreSQL, Gunicorn e Nginx.</p>{% if messages %}{% for message in messages %}<div
+            class="mensagem">{{ message }}</div>{% endfor %}{% endif %}{% block conteudo %}{% endblock %}
+    </main>
+</body>
+
+</html>

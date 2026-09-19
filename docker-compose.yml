@@ -1,0 +1,50 @@
+services:
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "127.0.0.1:15432:5432"
+    cpus: "0.50"
+    mem_limit: 512m
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aplicacao}
+      POSTGRES_USER: ${POSTGRES_USER:-aplicacao}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-senha-desenvolvimento}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [rede_aplicacao]
+  web:
+    build: .
+    cpus: "0.75"
+    mem_limit: 512m
+    environment:
+      DEBUG: ${DEBUG:-0}
+      SECRET_KEY: ${SECRET_KEY:-chave-insegura-apenas-para-desenvolvimento}
+      HOSTS_PERMITIDOS: ${HOSTS_PERMITIDOS:-localhost,127.0.0.1}
+      ORIGENS_CSRF_PERMITIDAS: ${ORIGENS_CSRF_PERMITIDAS:-http://localhost:8090,http://127.0.0.1:8090}
+      POSTGRES_DB: ${POSTGRES_DB:-aplicacao}
+      POSTGRES_USER: ${POSTGRES_USER:-aplicacao}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-senha-desenvolvimento}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+    volumes: [static_data:/app/staticfiles, media_data:/app/media]
+    depends_on:
+      db: {condition: service_healthy}
+    networks: [rede_aplicacao]
+  nginx:
+    image: nginx:1.27-alpine
+    cpus: "0.25"
+    mem_limit: 128m
+    ports: ["${PORTA_NGINX:-8090}:80"]
+    volumes: [./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro, static_data:/var/www/static:ro, media_data:/var/www/media:ro]
+    depends_on: [web]
+    networks: [rede_aplicacao]
+volumes:
+  postgres_data:
+  static_data:
+  media_data:
+networks:
+  rede_aplicacao:
