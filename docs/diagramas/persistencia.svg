@@ -7,6 +7,6 @@
   <rect x="825" y="85" width="220" height="85" class="b"/><text x="935" y="120" text-anchor="middle" class="s">postgres_data</text><text x="935" y="145" text-anchor="middle" class="l">banco persistente</text>
   <rect x="825" y="195" width="220" height="85" class="b"/><text x="935" y="230" text-anchor="middle" class="t">media_data</text><text x="935" y="255" text-anchor="middle" class="l">uploads persistentes</text>
   <rect x="825" y="305" width="220" height="70" class="b"/><text x="935" y="335" text-anchor="middle" class="t">static_data</text><text x="935" y="359" text-anchor="middle" class="l">arquivos coletados</text>
-  <path d="M275 165H825" class="p"/><text x="550" y="150" text-anchor="middle" class="l">monta postgres_data</text><path d="M660 180 C740 180 760 235 825 235" class="p"/><text x="745" y="195" class="l">grava</text><path d="M660 165 C740 165 770 340 825 340" class="p"/><text x="740" y="315" class="l">collectstatic</text>
+  <path d="M275 165H825" class="p"/><path d="M660 180 C740 180 760 235 825 235" class="p"/><text x="745" y="195" class="l">grava</text><path d="M660 165 C740 165 770 340 825 340" class="p"/><text x="740" y="315" class="l">collectstatic</text>
   <text x="550" y="388" text-anchor="middle" class="l">docker compose down preserva volumes; docker compose down -v remove os dados.</text>
 </svg>

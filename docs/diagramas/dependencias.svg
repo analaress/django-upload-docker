@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="300" viewBox="0 0 900 300" role="img" aria-labelledby="title desc">
+  <title id="title">Dependências e inicialização dos serviços</title><desc id="desc">O banco precisa estar saudável antes do web, e o Nginx inicia depois do web.</desc>
+  <defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3z" fill="#475569"/></marker><style>.b{fill:#fff;stroke:#475569;stroke-width:2;rx:12}.t{font:700 19px Arial;fill:#0f172a}.s{font:15px Arial;fill:#334155}.l{font:13px Arial;fill:#475569}.p{stroke:#475569;stroke-width:2;fill:none;marker-end:url(#a)}</style></defs>
+  <rect width="900" height="300" fill="#fff"/><text x="450" y="38" text-anchor="middle" class="t">Dependências e inicialização — Docker Compose</text>
+  <rect x="55" y="110" width="190" height="90" class="b"/><text x="150" y="147" text-anchor="middle" class="t">db</text><text x="150" y="175" text-anchor="middle" class="s">PostgreSQL</text>
+  <rect x="355" y="110" width="190" height="90" class="b"/><text x="450" y="147" text-anchor="middle" class="t">web</text><text x="450" y="175" text-anchor="middle" class="s">Django + Gunicorn</text>
+  <rect x="655" y="110" width="190" height="90" class="b"/><text x="750" y="147" text-anchor="middle" class="t">nginx</text><text x="750" y="175" text-anchor="middle" class="s">proxy reverso</text>
+  <path d="M245 155H355" class="p"/><text x="300" y="140" text-anchor="middle" class="l">healthcheck</text><text x="300" y="220" text-anchor="middle" class="l">pg_isready / service_healthy</text><path d="M545 155H655" class="p"/><text x="600" y="140" text-anchor="middle" class="l">depends_on</text><text x="600" y="220" text-anchor="middle" class="l">service_started</text>
+</svg>
