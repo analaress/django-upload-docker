@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="720" viewBox="0 0 1100 720" role="img" aria-labelledby="title desc">
+  <title id="title">Diagrama de sequência UML do upload</title>
+  <desc id="desc">Sequência temporal do upload entre navegador, Nginx, Django, volume media_data e PostgreSQL.</desc>
+  <defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3z" fill="#475569"/></marker><style>.h{fill:#e0e7ff;stroke:#475569;stroke-width:2;rx:8}.t{font:700 16px Arial;fill:#0f172a}.s{font:14px Arial;fill:#334155}.l{font:13px Arial;fill:#475569}.life{stroke:#94a3b8;stroke-width:2;stroke-dasharray:6 6}.msg{stroke:#475569;stroke-width:2;fill:none;marker-end:url(#a)}</style></defs>
+  <rect width="1100" height="720" fill="#fff"/><text x="550" y="32" text-anchor="middle" class="t">Diagrama de sequência UML — upload de arquivo</text>
+  <rect x="45" y="65" width="150" height="48" class="h"/><text x="120" y="95" text-anchor="middle" class="t">Navegador</text>
+  <rect x="250" y="65" width="150" height="48" class="h"/><text x="325" y="95" text-anchor="middle" class="t">Nginx :80</text>
+  <rect x="455" y="65" width="150" height="48" class="h"/><text x="530" y="95" text-anchor="middle" class="t">Django :8000</text>
+  <rect x="660" y="65" width="150" height="48" class="h"/><text x="735" y="95" text-anchor="middle" class="t">media_data</text>
+  <rect x="865" y="65" width="150" height="48" class="h"/><text x="940" y="95" text-anchor="middle" class="t">PostgreSQL</text>
+  <path d="M120 113V665M325 113V665M530 113V665M735 113V665M940 113V665" class="life"/>
+  <path d="M120 155H325" class="msg"/><text x="220" y="145" text-anchor="middle" class="l">POST /enviar/ multipart</text>
+  <path d="M325 205H530" class="msg"/><text x="425" y="195" text-anchor="middle" class="l">proxy_pass http://web:8000</text>
+  <path d="M530 255H530" class="msg"/><text x="545" y="245" class="l">valida extensão e tamanho</text>
+  <path d="M530 315H735" class="msg"/><text x="630" y="305" text-anchor="middle" class="l">grava arquivo em /app/media</text>
+  <path d="M530 375H940" class="msg"/><text x="735" y="365" text-anchor="middle" class="l">salva metadados e caminho</text>
+  <path d="M940 425H530" class="msg"/><text x="735" y="415" text-anchor="middle" class="l">confirmação da transação</text>
+  <path d="M530 485H325" class="msg"/><text x="425" y="475" text-anchor="middle" class="l">redirect para /</text>
+  <path d="M325 545H120" class="msg"/><text x="220" y="535" text-anchor="middle" class="l">página atualizada</text>
+  <path d="M120 605H325" class="msg"/><text x="220" y="595" text-anchor="middle" class="l">GET /media/arquivo</text>
+  <path d="M325 655H735" class="msg"/><text x="530" y="645" text-anchor="middle" class="l">lê o volume e entrega o arquivo</text>
+</svg>
