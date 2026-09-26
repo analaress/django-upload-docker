@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="650" viewBox="0 0 1100 650" role="img" aria-labelledby="title desc">
+  <title id="title">Arquitetura da aplicação Django com Docker</title>
+  <desc id="desc">Cliente acessa Nginx, que encaminha para Django e Gunicorn. Django acessa PostgreSQL e os volumes persistentes.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker>
+    <style>
+      .box{fill:#fff;stroke:#475569;stroke-width:2;rx:12}.group{fill:#f8fafc;stroke:#94a3b8;stroke-width:2;stroke-dasharray:8 6;rx:16}.title{font:700 20px Arial;fill:#0f172a}.text{font:15px Arial;fill:#334155}.small{font:13px Arial;fill:#475569}.line{stroke:#475569;stroke-width:2;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1100" height="650" fill="#ffffff"/>
+  <text x="550" y="38" text-anchor="middle" class="title">Diagrama de implantação — Central de Arquivos</text>
+  <rect x="30" y="75" width="1040" height="500" class="group"/>
+  <text x="55" y="105" class="title">Docker network: rede_aplicacao</text>
+
+  <rect x="70" y="180" width="190" height="95" class="box"/>
+  <text x="165" y="215" text-anchor="middle" class="title">Navegador</text>
+  <text x="165" y="242" text-anchor="middle" class="text">localhost:8090</text>
+  <text x="165" y="263" text-anchor="middle" class="small">cliente externo</text>
+
+  <rect x="350" y="160" width="190" height="120" class="box"/>
+  <text x="445" y="200" text-anchor="middle" class="title">Nginx</text>
+  <text x="445" y="228" text-anchor="middle" class="text">container: 80</text>
+  <text x="445" y="253" text-anchor="middle" class="small">proxy reverso</text>
+
+  <rect x="650" y="160" width="210" height="120" class="box"/>
+  <text x="755" y="198" text-anchor="middle" class="title">Django + Gunicorn</text>
+  <text x="755" y="226" text-anchor="middle" class="text">serviço web: 8000</text>
+  <text x="755" y="252" text-anchor="middle" class="small">aplicação e upload</text>
+
+  <rect x="650" y="365" width="210" height="105" class="box"/>
+  <text x="755" y="402" text-anchor="middle" class="title">PostgreSQL</text>
+  <text x="755" y="430" text-anchor="middle" class="text">db: 5432</text>
+  <text x="755" y="452" text-anchor="middle" class="small">localhost:15432</text>
+
+  <rect x="350" y="365" width="190" height="105" class="box"/>
+  <text x="445" y="402" text-anchor="middle" class="title">media_data</text>
+  <text x="445" y="428" text-anchor="middle" class="small">/app/media</text>
+  <text x="445" y="450" text-anchor="middle" class="small">/var/www/media</text>
+
+  <rect x="70" y="365" width="190" height="105" class="box"/>
+  <text x="165" y="402" text-anchor="middle" class="title">static_data</text>
+  <text x="165" y="428" text-anchor="middle" class="small">/app/staticfiles</text>
+  <text x="165" y="450" text-anchor="middle" class="small">/var/www/static</text>
+
+  <rect x="910" y="365" width="130" height="105" class="box"/>
+  <text x="975" y="402" text-anchor="middle" class="title">postgres_data</text>
+  <text x="975" y="430" text-anchor="middle" class="small">/var/lib/</text>
+  <text x="975" y="450" text-anchor="middle" class="small">postgresql/data</text>
+
+  <path d="M260 225 H350" class="line"/><text x="305" y="210" text-anchor="middle" class="small">8090 → 80</text>
+  <path d="M540 220 H650" class="line"/><text x="595" y="205" text-anchor="middle" class="small">web:8000</text>
+  <path d="M755 280 V365" class="line"/><text x="785" y="325" class="small">db:5432</text>
+  <path d="M650 250 C590 290 540 330 500 365" class="line"/><text x="565" y="315" class="small">grava upload</text>
+  <path d="M350 250 C300 300 270 330 245 365" class="line"/><text x="285" y="320" class="small">serve estáticos</text>
+  <path d="M445 280 V365" class="line"/><text x="465" y="330" class="small">lê mídia</text>
+  <path d="M860 415 H910" class="line"/><text x="885" y="400" text-anchor="middle" class="small">volume</text>
+  <text x="550" y="535" text-anchor="middle" class="small">Volumes persistem após docker compose down; são removidos com docker compose down -v.</text>
+</svg>

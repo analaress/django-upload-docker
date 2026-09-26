@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="390" viewBox="0 0 1100 390" role="img" aria-labelledby="title desc">
+  <title id="title">Persistência de dados</title><desc id="desc">PostgreSQL, uploads e arquivos estáticos são mantidos em volumes Docker.</desc>
+  <defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3z" fill="#475569"/></marker><style>.b{fill:#fff;stroke:#475569;stroke-width:2;rx:12}.t{font:700 19px Arial;fill:#0f172a}.s{font:15px Arial;fill:#334155}.l{font:13px Arial;fill:#475569}.p{stroke:#475569;stroke-width:2;fill:none;marker-end:url(#a)}</style></defs>
+  <rect width="1100" height="390" fill="#fff"/><text x="550" y="38" text-anchor="middle" class="t">Persistência independente dos containers</text>
+  <rect x="55" y="95" width="220" height="105" class="b"/><text x="165" y="135" text-anchor="middle" class="t">db</text><text x="165" y="163" text-anchor="middle" class="s">PostgreSQL</text><text x="165" y="185" text-anchor="middle" class="l">/var/lib/postgresql/data</text>
+  <rect x="440" y="95" width="220" height="105" class="b"/><text x="550" y="135" text-anchor="middle" class="t">web</text><text x="550" y="163" text-anchor="middle" class="s">Django / Gunicorn</text><text x="550" y="185" text-anchor="middle" class="l">/app/media e /app/staticfiles</text>
+  <rect x="825" y="70" width="220" height="85" class="b"/><text x="935" y="105" text-anchor="middle" class="t">postgres_data</text><text x="935" y="130" text-anchor="middle" class="l">banco persistente</text>
+  <rect x="825" y="180" width="220" height="85" class="b"/><text x="935" y="215" text-anchor="middle" class="t">media_data</text><text x="935" y="240" text-anchor="middle" class="l">uploads persistentes</text>
+  <rect x="825" y="290" width="220" height="70" class="b"/><text x="935" y="320" text-anchor="middle" class="t">static_data</text><text x="935" y="344" text-anchor="middle" class="l">arquivos coletados</text>
+  <path d="M275 145H825" class="p"/><text x="550" y="130" text-anchor="middle" class="l">monta postgres_data</text><path d="M660 160 C740 160 760 220 825 220" class="p"/><text x="745" y="180" class="l">grava</text><path d="M660 145 C740 145 770 325 825 325" class="p"/><text x="740" y="300" class="l">collectstatic</text>
+  <text x="550" y="380" text-anchor="middle" class="l">docker compose down preserva volumes; docker compose down -v remove os dados.</text>
+</svg>
