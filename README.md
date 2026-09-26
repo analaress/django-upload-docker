@@ -16,8 +16,6 @@ Projeto demonstrativo local de uma aplicação Django com upload de arquivos per
 
 Os diagramas da arquitetura estão centralizados em [docs/arquitetura.md](docs/arquitetura.md), incluindo implantação, componentes, comunicação, dependências e fluxo de upload.
 
-Para consultar os diagramas completos e suas explicações, acesse [docs/arquitetura.md](docs/arquitetura.md).
-
 ## Evidência da aplicação em execução
 
 A imagem abaixo registra a aplicação Django funcionando com upload realizado com sucesso e arquivos persistidos na listagem:
