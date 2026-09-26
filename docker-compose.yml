@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-aplicacao}
       POSTGRES_USER: ${POSTGRES_USER:-aplicacao}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-senha-desenvolvimento}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
     volumes: [postgres_data:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
@@ -27,7 +27,7 @@ services:
       ORIGENS_CSRF_PERMITIDAS: ${ORIGENS_CSRF_PERMITIDAS:-http://localhost:8090,http://127.0.0.1:8090}
       POSTGRES_DB: ${POSTGRES_DB:-aplicacao}
       POSTGRES_USER: ${POSTGRES_USER:-aplicacao}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-senha-desenvolvimento}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
     volumes: [static_data:/app/staticfiles, media_data:/app/media]

@@ -1,4 +1,18 @@
-{% extends "envios/base.html" %}{% block conteudo %}<h2>Enviar arquivo</h2>
-<form method="post" enctype="multipart/form-data">{% csrf_token %}{{ formulario.as_p }}<button class="botao"
-        type="submit">Enviar</button><a href="{% url 'pagina_inicial' %}">Voltar</a></form>
-<p>Permitidos: PDF, PNG, JPG, TXT, DOCX e PPTX. Tamanho máximo: 10 MB.</p>{% endblock %}
+{% extends "envios/base.html" %}
+{% block conteudo %}
+<section class="cartao">
+    <h2>Enviar arquivo</h2>
+    <form method="post" enctype="multipart/form-data" class="formulario">
+        {% csrf_token %}
+        {% if formulario.non_field_errors %}<div class="erros">{{ formulario.non_field_errors }}</div>{% endif %}
+        <div class="campo">
+            <label for="{{ formulario.arquivo.id_for_label }}">Selecione o arquivo</label>
+            {{ formulario.arquivo }}
+            {% if formulario.arquivo.errors %}<div class="erros">{{ formulario.arquivo.errors }}</div>{% endif %}
+        </div>
+        <button class="botao" type="submit">Enviar arquivo</button>
+    </form>
+    <p class="ajuda">Permitidos: PDF, PNG, JPG, TXT, DOCX e PPTX. Tamanho máximo: 10 MB.</p>
+    <a class="botao-secundario" href="{% url 'pagina_inicial' %}">Voltar para arquivos</a>
+</section>
+{% endblock %}
