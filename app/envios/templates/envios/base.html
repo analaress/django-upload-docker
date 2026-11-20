@@ -4,18 +4,50 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Central de Arquivos</title>
+    <title>{% block titulo %}Central de Arquivos{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'envios/estilos.css' %}">
 </head>
 <body>
-    <main class="pagina">
-        <header class="cabecalho">
-            <h1>Upload de Arquivos</h1>
+    <div class="pagina">
+        <header class="topo">
+            <a class="marca" href="{% url 'pagina_inicial' %}">
+                <span class="marca-icone">S3</span>
+                <span class="marca-texto">
+                    Central de Arquivos
+                    <small>Django · S3 · DynamoDB · Lambda</small>
+                </span>
+            </a>
+
+            <nav class="navegacao" aria-label="Navegação principal">
+                {% if request.usuario %}
+                    <span class="usuario">Olá, <strong>{{ request.usuario.nome }}</strong></span>
+                    <a class="nav-link" href="{% url 'enviar_arquivo' %}">Enviar imagens</a>
+                    <form method="post" action="{% url 'logout' %}" class="form-sair">
+                        {% csrf_token %}
+                        <button class="nav-link botao-sair" type="submit">Sair</button>
+                    </form>
+                {% else %}
+                    <a class="nav-link" href="{% url 'login' %}">Entrar</a>
+                    <a class="nav-link destaque" href="{% url 'cadastro' %}">Criar conta</a>
+                {% endif %}
+            </nav>
         </header>
 
-        {% if messages %}{% for message in messages %}<div class="mensagem mensagem-{{ message.tags }}">{{ message }}</div>{% endfor %}{% endif %}
+        {% if messages %}
+        <div class="mensagens">
+            {% for message in messages %}
+            <div class="mensagem mensagem-{{ message.tags }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
 
         {% block conteudo %}{% endblock %}
-    </main>
+
+        <footer class="rodape">
+            <span>Imagens armazenadas no Amazon S3 simulado pelo LocalStack.</span>
+            <span>Contas no Amazon DynamoDB · Miniaturas geradas por AWS Lambda.</span>
+        </footer>
+    </div>
+    <script src="{% static 'envios/app.js' %}" defer></script>
 </body>
 </html>

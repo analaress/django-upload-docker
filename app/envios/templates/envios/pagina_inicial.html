@@ -1,50 +1,98 @@
 {% extends "envios/base.html" %}
+{% block titulo %}Central de Arquivos · Minhas imagens{% endblock %}
 {% block conteudo %}
+
+<section class="painel-topo">
+    <div>
+        <p class="rotulo">Área privada</p>
+        <h1>Suas imagens</h1>
+        <p class="subtitulo">
+            Envie imagens para o bucket <code>{{ bucket_originais }}</code>.
+            As miniaturas são geradas automaticamente pela Lambda no bucket
+            <code>{{ bucket_processados }}</code>.
+        </p>
+    </div>
+    <a class="botao-atualizar" href="{% url 'pagina_inicial' %}">↻&nbsp;&nbsp;Atualizar lista</a>
+</section>
+
 <section class="zona-upload-cartao">
     <form method="post" action="{% url 'enviar_arquivo' %}" enctype="multipart/form-data" class="formulario">
         {% csrf_token %}
-        <label for="id_arquivo" class="botao-upload">
-            <svg class="icone-upload" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <label for="id_imagens" class="botao-upload">
+            <svg class="icone-upload" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M16 16l-4-4-4 4" />
                 <path d="M12 12v8" />
                 <path d="M20 16.5a4.5 4.5 0 0 0-2.8-4.2A5.5 5.5 0 0 0 6.5 10a4 4 0 0 0 .5 8H8" />
             </svg>
-            <strong>Arraste arquivos aqui ou clique para escolher</strong>
+            <strong>Arraste imagens aqui ou clique para escolher</strong>
             <span class="detalhe-upload">
-                <span>Formatos aceitos: PDF, PNG, JPG, TXT, DOCX e PPTX</span>
-                <span>Tamanho máximo por arquivo: 10 MB</span>
+                <span>Formatos aceitos: JPEG, PNG, GIF e WEBP</span>
+                <span>Até {{ limite_arquivos }} imagens por envio · {{ limite_mb }} MB por imagem</span>
             </span>
-            <span id="nome-arquivo" class="nome-arquivo" aria-live="polite">Nenhum arquivo selecionado</span>
-            <input id="id_arquivo" type="file" name="arquivo" required onchange="mostrarNomeArquivo(this)">
+            <span id="nome-arquivo" class="nome-arquivo" aria-live="polite">Nenhuma imagem selecionada</span>
+            <input id="id_imagens" type="file" name="imagens"
+                   accept="image/jpeg,image/png,image/gif,image/webp"
+                   multiple required>
         </label>
-        <button class="botao" type="submit">Enviar arquivo</button>
+        <button class="botao" type="submit">Enviar para o S3</button>
     </form>
 </section>
+
 <div class="cabecalho-arquivos">
-    <h2>Arquivos enviados <span>({{ arquivos|length }})</span></h2>
-    <a class="botao-atualizar" href="{% url 'pagina_inicial' %}">↻&nbsp;&nbsp;Atualizar</a>
+    <div>
+        <h2>Arquivos no S3 <span>({{ itens|length }})</span></h2>
+        <p class="legenda">As miniaturas aparecem automaticamente assim que a Lambda termina.</p>
+    </div>
+    <span class="selo-localstack">LocalStack · S3</span>
 </div>
-<section class="cartao cartao-arquivos">
-    {% if arquivos %}
-    <ul class="lista">
-        {% for arquivo in arquivos %}
-        <li class="item-arquivo">
-            <div>
-                <p>{{ arquivo.nome_original }}</p>
-                <span>{{ arquivo.enviado_em|date:"d/m/Y H:i" }}</span>
+
+{% if itens %}
+<section class="grade-imagens">
+    {% for item in itens %}
+    <article class="cartao-imagem"
+             data-chave="{{ item.chave }}"
+             data-nome="{{ item.nome }}"
+             data-processada="{{ item.processada|yesno:'1,0' }}"
+             data-status-url="{% url 'status_processado' chave=item.chave %}"
+             data-original-url="{% url 'baixar_original' chave=item.chave %}">
+        <div class="miniatura">
+            {% if item.processada %}
+                <img src="{% url 'ver_processado' chave=item.chave %}"
+                     alt="Miniatura de {{ item.nome }}" loading="lazy">
+                <span class="etiqueta etiqueta-ok">Processada</span>
+            {% else %}
+                <div class="processando">
+                    <span class="spinner" aria-hidden="true"></span>
+                    <span>Processando pela Lambda...</span>
+                </div>
+                <span class="etiqueta etiqueta-pendente">Aguardando</span>
+            {% endif %}
+        </div>
+        <div class="info-imagem">
+            <p class="nome-imagem" title="{{ item.nome }}">{{ item.nome }}</p>
+            <p class="meta-imagem">
+                {{ item.tamanho|filesizeformat }}
+                {% if item.enviado_em %}· {{ item.enviado_em|date:"d/m/Y H:i" }}{% endif %}
+            </p>
+            <div class="acoes-imagem">
+                <a class="link-arquivo" href="{% url 'baixar_original' chave=item.chave %}">Baixar original</a>
+                {% if item.processada %}
+                    <a class="link-arquivo" href="{% url 'baixar_processado' chave=item.chave %}">Baixar miniatura</a>
+                {% else %}
+                    <span class="aguardando">Miniatura em processamento</span>
+                {% endif %}
             </div>
-            <a class="link-arquivo" href="{{ arquivo.arquivo.url }}" target="_blank" rel="noopener">Acessar arquivo</a>
-        </li>
-        {% endfor %}
-    </ul>
-    {% else %}
-    <p class="vazio">Nenhum arquivo enviado ainda.</p>
-    {% endif %}
+        </div>
+    </article>
+    {% endfor %}
 </section>
-<script>
-    function mostrarNomeArquivo(input) {
-        const nome = input.files.length ? input.files[0].name : "Nenhum arquivo selecionado";
-        document.getElementById("nome-arquivo").textContent = nome;
-    }
-</script>
+{% else %}
+<section class="cartao">
+    <p class="vazio">
+        Nenhuma imagem enviada ainda.<br>
+        <span>Selecione uma imagem acima para começar.</span>
+    </p>
+</section>
+{% endif %}
+
 {% endblock %}

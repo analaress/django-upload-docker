@@ -1,0 +1,36 @@
+{% extends "envios/base.html" %}
+{% block titulo %}Central de Arquivos · Entrar{% endblock %}
+{% block conteudo %}
+
+<section class="cartao cartao-autenticacao">
+    <p class="rotulo">Acesso</p>
+    <h1>Entrar</h1>
+    <p class="subtitulo">
+        Entre com sua conta para acessar suas imagens.
+    </p>
+
+    <form method="post" class="formulario">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
+
+        {% if formulario.non_field_errors %}
+            <div class="erros">{{ formulario.non_field_errors }}</div>
+        {% endif %}
+
+        {% for campo in formulario %}
+        <div class="campo">
+            <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+            {{ campo }}
+            {% for erro in campo.errors %}<div class="erro-campo">{{ erro }}</div>{% endfor %}
+        </div>
+        {% endfor %}
+
+        <button class="botao" type="submit">Entrar</button>
+    </form>
+
+    <p class="rodape-formulario">
+        Ainda não tem conta? <a href="{% url 'cadastro' %}">Criar conta</a>
+    </p>
+</section>
+
+{% endblock %}

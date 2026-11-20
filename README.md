@@ -1,810 +1,667 @@
-# Central de Arquivos — Django, Nginx, PostgreSQL e Docker
+# Central de Arquivos — Django, S3, DynamoDB e Lambda no LocalStack
 
-Projeto demonstrativo local de uma aplicação Django com upload de arquivos persistente. A aplicação é executada em containers separados para Django/Gunicorn, Nginx e PostgreSQL.
+Aplicação web que reúne, em um único projeto Django, as três atividades do
+enunciado:
 
-## O que o projeto demonstra
+1. **Amazon S3 (LocalStack):** upload, listagem e download de imagens.
+2. **Amazon DynamoDB (LocalStack):** cadastro e autenticação de usuários.
+3. **AWS Lambda (LocalStack):** processamento automático da imagem após o
+   upload no S3, gerando uma miniatura em um segundo bucket.
 
-- criação de uma imagem Docker própria para Django;
-- execução do Django com Gunicorn;
-- uso do Nginx como proxy reverso;
-- banco PostgreSQL em container;
-- upload de arquivos pelo Django;
-- persistência dos uploads usando Docker Volume;
-- separação entre código da aplicação, proxy e banco de dados.
+A arquitetura original do repositório foi preservada: **Python, Django,
+Gunicorn, Nginx, PostgreSQL, Docker e Docker Compose**. O LocalStack foi
+acrescentado como ambiente AWS local, e o PostgreSQL continua tendo uma
+função real (sessões, admin e metadados/auditoria).
 
-## Arquitetura
+> **Documentação de execução:** o passo a passo completo para subir, testar,
+> parar e limpar o ambiente está em [COMANDOS.md](COMANDOS.md).
+>
+> **Diagramas:** a versão atualizada dos diagramas está em
+> [docs/arquitetura.md](docs/arquitetura.md).
 
-Os diagramas da arquitetura estão centralizados em [docs/arquitetura.md](docs/arquitetura.md), incluindo implantação, componentes, comunicação, dependências e fluxo de upload.
+---
 
-## Evidência da aplicação em execução
+## 1. O que a aplicação faz
 
-A imagem abaixo registra a aplicação Django funcionando com upload realizado com sucesso e arquivos persistidos na listagem:
+- Visitante cria conta com nome, e-mail e senha.
+- A senha é transformada em hash pelo Django e o registro é gravado no
+  **DynamoDB**.
+- O login consulta o DynamoDB pelo e-mail e compara a senha com o hash
+  armazenado.
+- A sessão autenticada é mantida pelo Django no **PostgreSQL**.
+- Usuário autenticado envia uma ou mais imagens.
+- O Django valida o conteúdo real com **Pillow** e envia o binário ao bucket
+  **`central-arquivos-originais`** no **S3/LocalStack**.
+- A listagem consulta o próprio S3; o PostgreSQL apenas enriquece a tela com
+  nome original e metadados.
+- Cada upload no bucket de originais gera um evento `ObjectCreated` que
+  aciona automaticamente a **Lambda**.
+- A Lambda baixa a imagem, gera uma miniatura com largura máxima de **300 px**
+  (proporção preservada) e grava o resultado no bucket
+  **`central-arquivos-processados`**.
+- O usuário pode baixar o original e a miniatura por rotas autenticadas do
+  Django, que leem do S3.
+- O bucket de processados **não tem gatilho**, evitando recursão.
 
-![Aplicação Django em execução](docs/imagens/aplicacao-em-execucao.png)
+---
 
-## Papel de cada serviço
+## 2. Arquitetura
 
-### `web` — Django + Gunicorn
+```mermaid
+flowchart LR
+    navegador["Navegador<br/>HTML + CSS + JavaScript"]
 
-É o serviço principal da aplicação. O container é construído a partir do `Dockerfile`, instala as dependências Python e executa o Django com Gunicorn.
+    subgraph docker["Docker Compose — rede_aplicacao"]
+        nginx["nginx:80<br/>proxy reverso + estáticos"]
+        web["web:8000<br/>Django + Gunicorn"]
+        db[("db:5432<br/>PostgreSQL<br/>sessões, admin, metadados")]
+        localstack["localstack:4566<br/>S3 + DynamoDB + Lambda"]
+        provisionador["provisionador<br/>cria buckets, tabela e Lambda"]
 
-Ao iniciar, o `entrypoint.sh` aguarda o PostgreSQL, executa migrations, coleta os arquivos estáticos e inicia o Gunicorn na porta interna `8000`.
+        subgraph aws["AWS simulada"]
+            s3o[("S3 originais<br/>central-arquivos-originais")]
+            s3p[("S3 processados<br/>central-arquivos-processados")]
+            ddb[("DynamoDB<br/>usuarios")]
+            lambda["Lambda<br/>processar-imagem"]
+        end
 
-### `nginx` — proxy reverso
+        static[("static_data<br/>CSS coletado")]
+        pg[("postgres_data")]
+        ls[("localstack_data")]
+    end
 
-É o único serviço publicado para acesso HTTP:
+    navegador -->|"localhost:8090"| nginx
+    nginx -->|"proxy_pass web:8000"| web
+    nginx -->|"serve /static/"| static
+    web -->|"SQL"| db
+    db --> pg
+    web -->|"boto3<br/>http://localstack:4566"| localstack
+    provisionador -->|"boto3"| localstack
+    localstack --- s3o
+    localstack --- s3p
+    localstack --- ddb
+    localstack --- lambda
+    localstack --- ls
+    s3o -->|"evento ObjectCreated"| lambda
+    lambda -->|"grava miniatura"| s3p
+```
 
-- `/static/`: serve arquivos estáticos do volume `static_data`;
-- `/media/`: serve os arquivos enviados do volume `media_data`;
-- demais caminhos: encaminha para `web:8000`.
+### Serviços do Docker Compose
 
-### `db` — PostgreSQL
+| Serviço | Imagem / build | Porta publicada | Função |
+|---|---|---|---|
+| `db` | `postgres:16-alpine` | `127.0.0.1:15432` | Sessões Django, admin e metadados/auditoria |
+| `localstack` | `localstack/localstack:3.8` | `127.0.0.1:4566` | S3, DynamoDB e Lambda simulados |
+| `provisionador` | `infra/localstack/Dockerfile` | — | Cria buckets, tabela, índice, Lambda e evento S3 (one-shot) |
+| `web` | `Dockerfile` | — | Django + Gunicorn na porta interna `8000` |
+| `nginx` | `nginx:1.27-alpine` | `localhost:8090` | Proxy reverso e arquivos estáticos |
 
-Armazena os dados da aplicação no volume `postgres_data`. A porta é publicada somente em `127.0.0.1:15432`, permitindo acesso local pelo DBeaver.
+Volumes:
 
-## Estrutura de diretórios
+| Volume | Conteúdo |
+|---|---|
+| `postgres_data` | Banco PostgreSQL (sessões, admin, metadados) |
+| `static_data` | CSS coletado por `collectstatic`; lido pelo Nginx |
+| `localstack_data` | Estado do LocalStack (S3, DynamoDB e código da Lambda) |
+
+O volume antigo `media_data` **não é mais usado**: o conteúdo das imagens agora
+fica no S3, que é a fonte de verdade. Essa remoção é intencional e está
+justificada na seção 7.
+
+---
+
+## 3. Onde cada tecnologia do enunciado é usada
+
+### 3.1 Atividade 1 — S3 (LocalStack)
+
+| Requisito | Onde está implementado |
+|---|---|
+| Enviar imagens do navegador ao backend | Formulário em `app/envios/templates/envios/pagina_inicial.html` e `enviar_arquivo.html`; view `enviar_arquivo` em `app/envios/views.py` |
+| Validar tipo/tamanho | `app/envios/validacao.py` (`validar_imagem`) e `app/envios/forms.py` (`FormularioUploadImagens`) |
+| Armazenar o conteúdo no bucket S3 | `app/envios/aws/arquivos.py` (`enviar_imagem` → `put_object`) |
+| Listar os objetos do bucket | `listar_imagens_do_usuario` em `app/envios/aws/arquivos.py` (`list_objects_v2`) |
+| Baixar cada imagem | Views `baixar_original` e `baixar_processado`; `obter_objeto` em `app/envios/aws/arquivos.py` |
+| Atualizar o card quando a miniatura fica pronta | View `status_processado` (`HEAD` no bucket de processados) e polling em `app/envios/static/envios/app.js`, sem recarregar a página |
+| O arquivo fica no S3, não em volume local | `docker-compose.yml` não monta mais `media_data`; o `FileField` local foi removido do model |
+| Integração real com a API S3 do LocalStack | Cliente boto3 em `app/envios/aws/clientes.py` com `endpoint_url=http://localstack:4566` e path-style |
+
+### 3.2 Atividade 2 — DynamoDB (LocalStack)
+
+| Requisito | Onde está implementado |
+|---|---|
+| Tela/formulário de cadastro | `app/envios/templates/envios/cadastro.html`; `FormularioCadastro` em `app/envios/forms.py` |
+| Validação dos dados | `FormularioCadastro.clean`, `clean_email` e `clean` |
+| Gravar usuário na tabela DynamoDB | `criar_usuario` em `app/envios/aws/usuarios.py` (`TransactWriteItems`) |
+| Tela/formulário de login | `app/envios/templates/envios/login.html`; `FormularioLogin` |
+| Consultar o DynamoDB na autenticação | `buscar_usuario_por_email` (query no índice `email-index`) e `autenticar` |
+| Senha com hash seguro | `make_password` no cadastro e `check_password` no login (hashers do Django, PBKDF2) |
+| Sessão autenticada | `iniciar_sessao` em `app/envios/sessao.py`; sessão Django no PostgreSQL |
+| Bloquear páginas privadas | `login_obrigatorio` em `app/envios/decorators.py` e `UsuarioDynamoDBMiddleware` |
+| Logout | View `logout` (`POST`) e `encerrar_sessao` |
+| E-mail duplicado | Item de reserva `email#<email>` + transação condicional no DynamoDB |
+
+### 3.3 Atividade 3 — Lambda (LocalStack)
+
+| Requisito | Onde está implementado |
+|---|---|
+| Criar a função Lambda no LocalStack | `garantir_lambda` em `infra/localstack/init_aws.py` |
+| Configurar evento no bucket de originais | `configurar_eventos` (`s3:ObjectCreated:*`, prefixo `usuarios/`) |
+| Acionar a Lambda automaticamente | Notificação do S3 configurada pelo provisionador; a aplicação nunca invoca a Lambda manualmente |
+| Obter a imagem original | `handler` em `lambda/processar_imagem.py` (`S3.get_object`) |
+| Processar a imagem | `gerar_miniatura`: Pillow, largura máxima de 300 px, proporção preservada, JPEG |
+| Enviar resultado ao segundo bucket | `S3.put_object` para `central-arquivos-processados` |
+| Mostrar/baixar o resultado | `listar_chaves_processadas`, `ver_processado` e `baixar_processado` |
+| Evitar recursão | Saída em outro bucket; o bucket de processados recebe configuração de notificação vazia; a Lambda ignora eventos de outros buckets |
+
+### 3.4 Demais tecnologias da arquitetura
+
+| Tecnologia | Papel no projeto | Onde aparece |
+|---|---|---|
+| **Python 3.12** | Linguagem do backend e da Lambda | `Dockerfile`, `app/`, `lambda/`, `infra/` |
+| **Django** | Rotas, formulários, validações, sessões, templates e integração AWS | `app/config/`, `app/envios/` |
+| **Gunicorn** | Servidor WSGI que executa o Django | `entrypoint.sh`: `gunicorn config.wsgi:application --bind 0.0.0.0:8000` |
+| **Nginx** | Proxy reverso e entrega de `/static/` | `nginx/default.conf` |
+| **Docker** | Imagem própria do Django e imagem do provisionador | `Dockerfile`, `infra/localstack/Dockerfile` |
+| **Docker Compose** | Orquestra `db`, `localstack`, `provisionador`, `web` e `nginx` | `docker-compose.yml` |
+| **PostgreSQL** | Sessões (`django_session`), admin e metadados/auditoria | `settings.py` (`DATABASES`), `app/envios/models.py`, migration `0002_metadados_s3.py` |
+| **LocalStack** | Simula S3, DynamoDB e Lambda | Serviço `localstack` no Compose; endpoint `http://localstack:4566` |
+| **S3 — bucket original** | Guarda o binário original de cada imagem | `S3_BUCKET_ORIGINAIS`; `aws/arquivos.py`; Lambda lê daqui |
+| **S3 — bucket processado** | Guarda as miniaturas JPEG | `S3_BUCKET_PROCESSADOS`; Lambda grava; views leem |
+| **DynamoDB** | Fonte de verdade das contas e da autenticação | Tabela `usuarios`, índice `email-index`, `aws/usuarios.py` |
+| **Lambda** | Processamento automático pós-upload | `lambda/processar_imagem.py`; provisionada por `init_aws.py` |
+| **Boto3** | SDK que conversa com S3, DynamoDB e Lambda | `app/envios/aws/clientes.py`, `infra/localstack/init_aws.py`, `lambda/processar_imagem.py` |
+| **Pillow** | Valida o conteúdo real da imagem e gera a miniatura | `app/envios/validacao.py` e `lambda/processar_imagem.py` |
+| **HTML + CSS + JS** | Interface de cadastro, login, upload, listagem, download e atualização automática das miniaturas | `app/envios/templates/` e `app/envios/static/envios/` (`estilos.css` e `app.js`) |
+| **JavaScript** | Mostra os nomes dos arquivos selecionados | `mostrarNomes` em `pagina_inicial.html` |
+
+Não foi usado Node.js, Express ou Multer. Toda a lógica de backend permanece
+em Python/Django.
+
+---
+
+## 4. Estrutura de diretórios
 
 ```text
 .
 ├── app/
-│   ├── manage.py                         # Comandos administrativos do Django
-│   ├── config/                           # Configuração do projeto Django
-│   │   ├── settings.py                   # Banco, apps, estáticos e mídia
-│   │   ├── urls.py                       # Rotas principais
-│   │   └── wsgi.py                       # Entrada usada pelo Gunicorn
-│   └── envios/                           # Aplicação responsável pelos uploads
-│       ├── models.py                      # Modelo ArquivoEnviado
-│       ├── forms.py                       # Validação do upload
-│       ├── views.py                       # Lista e recebe arquivos
-│       ├── urls.py                        # Rotas da aplicação
-│       ├── admin.py                       # Registro no admin
-│       ├── migrations/                    # Histórico do banco
-│       ├── templates/envios/              # Páginas HTML
-│       └── static/envios/                 # CSS
-├── nginx/default.conf                     # Proxy e arquivos estáticos/mídia
-├── docs/arquitetura.md                    # Resumo visual
-├── Dockerfile                             # Imagem própria do Django
-├── docker-compose.yml                     # Serviços, rede e volumes
-├── entrypoint.sh                          # Inicialização do Django
-├── requirements.txt                       # Dependências Python
-├── .env.example                           # Exemplo de variáveis
-└── .gitignore                             # Arquivos ignorados pelo Git
+│   ├── manage.py
+│   ├── config/
+│   │   ├── settings.py              # PostgreSQL, sessões, AWS/LocalStack, limites
+│   │   ├── urls.py                  # admin + rotas da aplicação
+│   │   └── wsgi.py                  # entrada do Gunicorn
+│   └── envios/
+│       ├── aws/
+│       │   ├── clientes.py          # clientes boto3 (S3 e DynamoDB)
+│       │   ├── usuarios.py          # cadastro/consulta/autenticação no DynamoDB
+│       │   └── arquivos.py          # upload/listagem/download no S3
+│       ├── middleware.py            # carrega request.usuario do DynamoDB
+│       ├── decorators.py            # login_obrigatorio
+│       ├── sessao.py                # iniciar/encerrar sessão Django
+│       ├── validacao.py             # validação real da imagem com Pillow
+│       ├── forms.py                 # cadastro, login e upload múltiplo
+│       ├── views.py                 # fluxos de cadastro, login, upload e download
+│       ├── urls.py                  # rotas da aplicação
+│       ├── models.py                # metadados/auditoria no PostgreSQL
+│       ├── admin.py                 # histórico de envios no admin
+│       ├── migrations/
+│       │   ├── 0001_inicial.py
+│       │   └── 0002_metadados_s3.py # remove FileField local e adiciona chave S3
+│       ├── templates/envios/        # base, login, cadastro, listagem e upload
+│       └── static/envios/           # CSS e JS da interface
+├── lambda/
+│   └── processar_imagem.py          # handler S3 -> Pillow -> bucket processados
+├── infra/
+│   └── localstack/
+│       ├── Dockerfile               # empacota a Lambda com Pillow
+│       ├── init_aws.py              # provisionamento idempotente
+│       └── requirements-provisionamento.txt
+├── nginx/default.conf               # proxy reverso e /static/
+├── docs/arquitetura.md              # diagramas e decisões atualizadas
+├── Dockerfile                       # imagem Django + Gunicorn
+├── docker-compose.yml               # db, localstack, provisionador, web, nginx
+├── executar.sh                      # atalho: sobe tudo e espera o provisionador
+├── entrypoint.sh                    # espera Postgres, migrate, collectstatic, Gunicorn
+├── requirements.txt                 # Django, Gunicorn, Psycopg, boto3, Pillow
+├── .env.example                     # variáveis sem segredos reais
+├── README.md
+└── COMANDOS.md                      # passo a passo de execução e testes
 ```
 
-## Como funciona o upload
+---
 
-1. O usuário acessa `/enviar/` pelo Nginx.
-2. O formulário envia o arquivo ao Django.
-3. O formulário valida extensão e tamanho máximo de 10 MB.
-4. O Django salva os metadados no PostgreSQL.
-5. O arquivo físico é salvo em `/app/media`, ligado ao volume `media_data`.
-6. O Nginx monta o mesmo volume em `/var/www/media` e serve o arquivo por `/media/`.
+## 5. Fluxos detalhados
 
-## Como executar
+### 5.1 Cadastro e login (DynamoDB)
 
-### Pré-requisitos
+```mermaid
+sequenceDiagram
+    actor U as Visitante
+    participant N as Nginx
+    participant D as Django
+    participant Dy as DynamoDB
+    participant P as PostgreSQL
 
-- Docker Engine instalado no WSL;
-- Docker Compose Plugin disponível (`docker compose version`);
-- portas `8090` e `15432` disponíveis.
-
-### Inicialização
-
-Na raiz do projeto:
-
-```powershell
-Copy-Item .env.example .env
-docker compose up --build -d
+    U->>N: POST /cadastro/
+    N->>D: proxy_pass web:8000
+    D->>D: FormularioCadastro + make_password
+    D->>Dy: TransactWriteItems<br/>usuário + reserva email#...
+    alt e-mail já reservado
+        Dy-->>D: ConditionalCheckFailed
+        D-->>U: erro "e-mail já cadastrado"
+    else sucesso
+        Dy-->>D: OK
+        D->>P: cria django_session
+        D-->>U: 302 / (autenticado)
+    end
 ```
 
-Acesse:
+1. O formulário valida nome, e-mail normalizado e confirmação de senha.
+2. O Django gera o hash com `make_password` (PBKDF2, nunca texto puro).
+3. `criar_usuario` grava **dois itens** na mesma transação:
+   - o usuário, com `user_id` UUID;
+   - uma reserva `email#<email>` para garantir unicidade.
+4. Se a reserva já existir, a transação falha e a aplicação mostra erro.
+5. A sessão Django é criada no PostgreSQL; o cookie guarda apenas o ID da
+   sessão, e a sessão guarda apenas `usuario_id`/`usuario_email`.
+6. Em cada requisição, `UsuarioDynamoDBMiddleware` consulta o DynamoDB pelo
+   `user_id` e monta `request.usuario`.
 
-- aplicação: http://localhost:8090
-- administração Django: http://localhost:8090/admin/
-- PostgreSQL: `localhost:15432`
+No login:
 
-Credenciais do DBeaver (use os valores definidos no seu arquivo `.env`):
+1. `buscar_usuario_por_email` consulta o índice global `email-index`.
+2. `autenticar` usa `check_password` contra o `senha_hash` recuperado.
+3. Se válido, `iniciar_sessao` rotaciona a chave da sessão (`cycle_key`) e
+   grava o identificador da conta.
+4. Se inválido, a resposta é genérica: “E-mail ou senha inválidos”.
+5. Logout faz `session.flush()` e exige `POST` com CSRF.
 
-```text
-Host: localhost
-Porta: 15432
-Banco: aplicacao
-Usuário: aplicacao
-Senha: o valor de `POSTGRES_PASSWORD` no seu `.env`
+### 5.2 Upload, listagem e download (S3)
+
+```mermaid
+sequenceDiagram
+    actor U as Usuário autenticado
+    participant D as Django
+    participant P as PostgreSQL
+    participant S as S3 originais
+
+    U->>D: POST /enviar/ (multipart)
+    D->>D: validar_imagem (Pillow)
+    D->>S: PutObject usuarios/<user_id>/<uuid>.<ext>
+    S-->>D: ETag
+    D->>P: INSERT metadados (chave, nome, tamanho, tipo)
+    D-->>U: 302 / + mensagem
+    U->>D: GET /
+    D->>S: ListObjectsV2 (prefixo do usuário)
+    S-->>D: chaves e tamanhos
+    D-->>U: HTML com nome original + links
+    U->>D: GET /arquivos/<chave>/original/
+    D->>S: GetObject
+    S-->>D: bytes
+    D-->>U: FileResponse (attachment)
 ```
 
-## Comandos úteis
+- A chave é gerada com UUID, sem usar o nome enviado pelo navegador:
+  `usuarios/<user_id>/<uuid>.<extensão>`.
+- A extensão vem do formato detectado pelo Pillow, não do nome do arquivo.
+- A listagem é feita no S3, com prefixo `usuarios/<user_id>/`.
+- O PostgreSQL é consultado em lote apenas para recuperar `nome_original`,
+  tamanho e data; se o metadado não existir, a chave S3 ainda é listada.
+- O download passa por uma view autenticada; o Nginx **não** serve `/media/`.
+- A chave é validada contra o prefixo do usuário da sessão e contra `..`,
+  impedindo acesso a arquivos de outra conta.
 
-```powershell
-docker compose ps
-docker compose logs -f web
-docker compose logs -f nginx
-docker compose logs -f db
-docker compose down
-docker compose up --build -d
-docker compose exec web sh
-docker compose exec web python manage.py check
-docker compose exec web python manage.py createsuperuser
+### 5.3 S3 → evento → Lambda → bucket de processados
+
+```mermaid
+sequenceDiagram
+    participant D as Django
+    participant So as S3 originais
+    participant L as Lambda
+    participant Sp as S3 processados
+    actor U as Usuário
+
+    D->>So: PutObject usuarios/<uid>/<uuid>.png
+    So-->>L: evento s3:ObjectCreated:*
+    L->>So: GetObject
+    So-->>L: bytes da imagem
+    L->>L: Pillow: largura máxima 300 px
+    L->>Sp: PutObject usuarios/<uid>/<uuid>_thumb.jpg
+    U->>D: GET / (lista inicial)
+    D->>Sp: ListObjectsV2
+    Sp-->>D: chaves das miniaturas
+    D-->>U: cards; pendentes com data-status-url
+    loop a cada 2,5 s enquanto houver card pendente
+        U->>D: GET /arquivos/<chave>/status/
+        D->>Sp: HeadObject <uuid>_thumb.jpg
+        Sp-->>D: existe?
+        D-->>U: {"processada": true|false}
+    end
+    U->>D: GET /arquivos/<chave>/miniatura/
+    D->>Sp: GetObject
+    Sp-->>D: JPEG
+    D-->>U: miniatura
 ```
 
-### Solução de problemas
+- O evento é configurado **no bucket de originais**, com filtro de prefixo
+  `usuarios/`.
+- A Lambda grava no bucket de processados, que não tem notificação.
+- O handler também ignora eventos cujo bucket não seja o de originais,
+  como defesa extra contra recursão.
+- A listagem verifica quais chaves `_thumb.jpg` já existem no bucket de
+  processados. Enquanto a Lambda não termina, o card mostra
+  “Processando pela Lambda...”. O JavaScript consulta o endpoint de status a
+  cada 2,5 s e troca o card pela miniatura assim que o objeto aparece, sem
+  recarregar a página. O botão “Atualizar lista” continua disponível como
+  fallback.
+- A primeira invocação pode demorar porque o LocalStack baixa a imagem
+  `public.ecr.aws/lambda/python:3.12` para executar a função.
 
-Se a aplicação não abrir, verifique se o arquivo `.env` existe, se as portas `8090` e `15432` estão livres e consulte o estado dos serviços:
+---
 
-```powershell
-docker compose ps
-docker compose logs web
-docker compose logs nginx
-docker compose logs db
+## 6. Modelo de dados
+
+### 6.1 DynamoDB — tabela `usuarios`
+
+- Chave primária: `user_id` (string, UUID).
+- Índice global: `email-index`, partição por `email`, projeção `ALL`.
+- Item de usuário:
+
+```json
+{
+  "user_id":       {"S": "8f14e45f-ceea-467f-a8f5-1b2c3d4e5f60"},
+  "tipo":          {"S": "usuario"},
+  "nome":          {"S": "Maria Silva"},
+  "email":         {"S": "maria@exemplo.com"},
+  "senha_hash":    {"S": "pbkdf2_sha256$1000000$...$..."},
+  "data_cadastro": {"S": "2026-11-19T12:00:00+00:00"}
+}
 ```
 
-Se `docker compose` não for reconhecido, instale ou habilite o Docker Compose Plugin no ambiente WSL.
+- Item de reserva de e-mail:
 
-`docker compose down` preserva os volumes. Não use `docker compose down -v` se quiser manter banco, uploads e estáticos.
+```json
+{
+  "user_id":           {"S": "email#maria@exemplo.com"},
+  "tipo":              {"S": "reserva_email"},
+  "email_normalizado": {"S": "maria@exemplo.com"},
+  "criado_em":         {"S": "2026-11-19T12:00:00+00:00"}
+}
+```
 
-## Variáveis de ambiente
+O item de reserva **não possui o atributo `email`**, portanto não aparece no
+índice `email-index`. A gravação dos dois itens usa `TransactWriteItems` com
+`attribute_not_exists(user_id)`: duas requisições simultâneas com o mesmo
+e-mail não criam contas duplicadas. O e-mail é sempre normalizado
+(`strip().lower()`).
 
-Copie `.env.example` para `.env`. As principais variáveis são:
+> O DynamoDB é a fonte de verdade das contas da aplicação. O usuário padrão
+> do Django/PostgreSQL existe apenas para o **admin** interno, não é usado no
+> cadastro nem no login da Central de Arquivos.
 
-- `DEBUG`: modo de depuração;
-- `SECRET_KEY`: chave secreta do Django;
-- `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`: credenciais do banco;
-- `PORTA_NGINX`: porta HTTP local;
-- `HOSTS_PERMITIDOS`: hosts aceitos;
-- `ORIGENS_CSRF_PERMITIDAS`: origens confiáveis para CSRF.
+### 6.2 PostgreSQL — modelo `ArquivoEnviado`
 
-## Volumes
-
-| Volume | Conteúdo | Uso |
+| Campo | Tipo | Uso |
 |---|---|---|
-| `postgres_data` | Dados do PostgreSQL | Preserva o banco |
-| `media_data` | Arquivos enviados | Preserva uploads |
-| `static_data` | Arquivos coletados | Permite ao Nginx servir CSS |
+| `id` | BigAutoField | Identificador interno |
+| `proprietario_id` | CharField(64), indexado | `user_id` do DynamoDB |
+| `proprietario_email` | EmailField | Auditoria |
+| `chave_s3` | CharField(512), único, nulo | Caminho do objeto no bucket original |
+| `nome_original` | CharField(255) | Nome exibido na listagem |
+| `tamanho_em_bytes` | PositiveBigIntegerField | Tamanho do original |
+| `content_type` | CharField(100) | Tipo detectado pelo Pillow |
+| `enviado_em` | DateTimeField | Data/hora do upload |
 
-## Ambiente Python e `venv`
+O conteúdo binário **não** está nesse modelo. O PostgreSQL guarda somente
+metadados/auditoria. A migration `0002_metadados_s3.py` remove o antigo
+`FileField` local e adiciona os campos acima.
 
-O `venv` local é opcional. Como a execução oficial utiliza Docker Compose, o Python e as dependências são instalados no container `web`. O ambiente virtual só é necessário para executar o Django diretamente fora do Docker e não deve ser versionado.
-
-## Defesa técnica — explicação completa
-
-### 1. Visão geral da arquitetura
-
-#### Arquitetura da solução
-
-A solução é dividida em três containers conectados pela rede Docker `rede_aplicacao`:
-
-- `web`: Django executado pelo Gunicorn;
-- `nginx`: proxy reverso e servidor de arquivos;
-- `db`: PostgreSQL.
-
-O fluxo principal é:
-
-1. o navegador acessa `http://localhost:8090`;
-2. o Nginx recebe a requisição;
-3. arquivos estáticos e uploads são servidos diretamente pelo Nginx;
-4. outras rotas são encaminhadas para `web:8000`;
-5. o Django processa a requisição;
-6. quando necessário, o Django acessa `db:5432`;
-7. o PostgreSQL guarda os metadados;
-8. o volume de mídia guarda o arquivo físico.
-
-O navegador não acessa diretamente o Gunicorn. O DBeaver acessa o banco pelo mapeamento local `localhost:15432 -> db:5432`.
-
-#### Diagrama de Implantação (Deployment Diagram)
-
-O Diagrama de Implantação está em [docs/arquitetura.md](docs/arquitetura.md). Ele mostra cliente, containers, portas publicadas e internas, rede `rede_aplicacao`, volumes e comunicação.
-
-![Diagrama de implantação da arquitetura](docs/diagramas/arquitetura.svg)
-
-Este é o Diagrama de Implantação da solução. Ele representa:
-
-- **Cliente:** navegador e DBeaver fora da rede Docker;
-- **Containers:** `nginx`, `web` e `db`;
-- **Rede Docker:** `rede_aplicacao`, representada pelo agrupamento dos containers;
-- **Portas publicadas:** `localhost:8090` para o Nginx e `localhost:15432` para o PostgreSQL;
-- **Portas internas:** `nginx:80`, `web:8000` e `db:5432`;
-- **Volumes persistentes:** `postgres_data`, `media_data` e `static_data`;
-- **Comunicação:** Cliente → `nginx` → `web` → `db`;
-- **Armazenamento:** `web` grava uploads em `media_data` e `db` grava dados em `postgres_data`.
-
-O diagrama também deixa explícito que o Nginx lê `media_data` e `static_data`, enquanto o PostgreSQL utiliza `postgres_data`.
-
-#### Diagrama de Componentes
-
-O diagrama abaixo não representa máquinas, containers ou volumes. Ele representa os componentes lógicos e suas responsabilidades na comunicação da aplicação.
-
-O Diagrama de Componentes está em [docs/arquitetura.md](docs/arquitetura.md). Ele apresenta a colaboração lógica entre Cliente, Nginx, Django/Gunicorn, PostgreSQL e volumes.
-
-![Diagrama de Componentes](docs/diagramas/componentes.svg)
-
-Este segundo diagrama mostra **como** os componentes colaboram. O diagrama anterior mostra **onde** eles são implantados. Portanto, ambos são utilizados com nomes diferentes e não representam a mesma visão arquitetural.
-
-#### Portas utilizadas
-
-| Origem | Destino | Porta publicada | Porta interna | Finalidade |
-|---|---|---:|---:|---|
-| Navegador | `nginx` | `localhost:8090` | `80` | acesso HTTP à aplicação |
-| Nginx | `web` | não publicada | `8000` | rotas Django via Gunicorn |
-| Django | `db` | não publicada | `5432` | conexão PostgreSQL interna |
-| DBeaver | `db` | `localhost:15432` | `5432` | acesso local ao PostgreSQL |
-
-`8090`, `15432` e `localhost` são usados pelo computador do usuário. `web`, `db`, `8000` e `5432` são usados dentro da rede Docker.
-
-#### Rede Docker e comunicação entre containers
-
-Os serviços participam da rede `rede_aplicacao`, declarada no `docker-compose.yml`. Nessa rede, o Docker fornece resolução de nomes: `web` aponta para o container Django e `db` aponta para o container PostgreSQL.
-
-Assim, o Nginx usa `http://web:8000` e o Django usa `POSTGRES_HOST=db`. Eles não usam `localhost` para encontrar outros containers, porque `localhost` significaria o próprio container atual.
-
-#### Volumes e armazenamento
-
-| Volume | Container que grava | Caminho de gravação | Container que lê | Conteúdo |
-|---|---|---|---|---|
-| `postgres_data` | `db` | `/var/lib/postgresql/data` | `db` | dados físicos do PostgreSQL |
-| `media_data` | `web` | `/app/media` | `nginx` | arquivos enviados pela aplicação |
-| `static_data` | `web` | `/app/staticfiles` | `nginx` | CSS e arquivos estáticos |
-
-Quando o usuário envia um arquivo, o Django grava o conteúdo em `/app/media`, que pertence ao volume `media_data`. O PostgreSQL guarda os metadados, como nome original, tamanho, data e caminho. O Nginx monta o mesmo volume em `/var/www/media` e entrega o arquivo pela URL `/media/`.
-
-Os diagramas oficiais e suas explicações estão centralizados em [docs/arquitetura.md](docs/arquitetura.md).
-
-#### Artefatos de modelagem utilizados
-
-Para representar tecnicamente a solução, foram utilizados dois artefatos compatíveis com UML e C4:
-
-- **Diagrama de Implantação:** representa o cliente, os containers, a rede Docker, as portas publicadas e os volumes persistentes.
-- **Diagrama de Componentes:** representa a comunicação lógica entre Cliente, Nginx, Django/Gunicorn, PostgreSQL e volumes. Ele está em [docs/arquitetura.md](docs/arquitetura.md).
-
-O uso combinado é importante porque cada diagrama responde a uma pergunta diferente: o Diagrama de Implantação mostra **onde** cada parte executa e como ela é conectada; o Diagrama de Componentes mostra **como** as partes colaboram para atender uma requisição e armazenar um upload.
-
-| Elemento | Tipo | Endereço | Função |
-|---|---|---|---|
-| Cliente | externo | `localhost:8090` | envia requisições e arquivos |
-| Nginx | container | `nginx:80` | proxy, estáticos e mídia |
-| Django/Gunicorn | container | `web:8000` | regras da aplicação e upload |
-| PostgreSQL | container | `db:5432` | metadados e dados do Django |
-| `media_data` | volume | `/app/media` e `/var/www/media` | arquivos enviados |
-| `static_data` | volume | `/app/staticfiles` e `/var/www/static` | CSS e estáticos |
-| `postgres_data` | volume | `/var/lib/postgresql/data` | dados físicos do banco |
-
-### 2. Imagem Docker da aplicação Django
-
-O [Dockerfile](Dockerfile) desenvolve uma imagem própria para executar a aplicação Django. A imagem contém o runtime Python, as dependências, o código da aplicação e o script responsável pela inicialização.
-
-#### Imagem base utilizada
-
-```dockerfile
-FROM python:3.12-slim
-```
-
-Foi escolhida `python:3.12-slim` porque o projeto precisa do interpretador Python para executar Django e Gunicorn, mas não precisa de uma distribuição completa. A variante `slim` reduz o tamanho da imagem e a quantidade de pacotes desnecessários.
-
-Essa imagem também evita instalar Python manualmente e oferece uma base oficial e reproduzível para a aplicação. O projeto utiliza containers Linux porque Django, Gunicorn e PostgreSQL são executados dentro da rede Docker.
-
-#### Variáveis de ambiente do Python
-
-```dockerfile
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
-```
-
-- `PYTHONDONTWRITEBYTECODE=1` evita arquivos `.pyc` desnecessários dentro da imagem;
-- `PYTHONUNBUFFERED=1` faz os logs aparecerem imediatamente no terminal, o que facilita acompanhar `docker compose logs`.
-
-Essas variáveis não configuram o banco nem o Django. As configurações da aplicação são recebidas pelo `docker-compose.yml` em tempo de execução.
-
-#### Organização dos arquivos e `WORKDIR`
-
-```dockerfile
-WORKDIR /app
-```
-
-O diretório `/app` é o local padrão de execução dentro do container. O código do diretório local `app/` é copiado para esse diretório:
-
-```dockerfile
-COPY app/ .
-```
-
-Consequentemente, dentro da imagem:
+### 6.3 S3 — convenção de chaves
 
 ```text
-/app/manage.py
-/app/config/
-/app/envios/
-/app/media/
-/app/staticfiles/
+central-arquivos-originais/
+└── usuarios/<user_id>/<uuid>.<ext>          # original
+
+central-arquivos-processados/
+└── usuarios/<user_id>/<uuid>_thumb.jpg      # miniatura gerada pela Lambda
 ```
 
-O `Dockerfile` também copia o script de inicialização para a raiz do container:
+A mesma função de derivação (`<base>_thumb.jpg`) existe em
+`app/envios/aws/arquivos.py` e em `lambda/processar_imagem.py`. Como a Lambda
+não importa Django, a regra é duplicada de forma explícita e documentada.
 
-```dockerfile
-COPY entrypoint.sh /entrypoint.sh
-```
+---
 
-Essa organização permite que `python manage.py` seja executado diretamente a partir de `/app`.
+## 7. Decisões arquiteturais
 
-#### Instalação das dependências
+### Por que o PostgreSQL foi mantido
 
-```dockerfile
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-```
+- **Sessões Django:** `django.contrib.sessions` usa a tabela `django_session`
+  no PostgreSQL. A verificação de credenciais, porém, é feita no DynamoDB.
+- **Admin:** o admin do Django continua disponível para inspeção interna e
+  usa o usuário padrão do Django. Ele não substitui as contas da aplicação.
+- **Metadados/auditoria:** o histórico de envios e a associação
+  `user_id → chave S3` ficam no PostgreSQL, sem duplicar o conteúdo binário.
 
-O arquivo de dependências é copiado antes do código-fonte. Isso permite que o Docker reaproveite a camada de instalação quando apenas o código da aplicação mudar.
+### Por que o volume `media_data` foi removido
 
-As principais dependências são:
+O enunciado exige que a imagem fique no S3, e não apenas em uma pasta/volume
+local. Manter `media_data` daria duas fontes de verdade e permitiria que o
+Nginx servisse arquivos sem autenticação. Por isso:
 
-- Django: framework web;
-- Gunicorn: servidor WSGI da aplicação;
-- Psycopg: driver Python para PostgreSQL.
+- o `FileField` local foi removido do model;
+- o Compose não monta mais `media_data`;
+- o Nginx não serve mais `/media/`;
+- uploads e downloads passam pelo S3 e por views autenticadas.
 
-O parâmetro `--no-cache-dir` evita manter o cache de pacotes dentro da imagem, reduzindo seu tamanho final.
+O volume `media_data` de instalações antigas não é apagado automaticamente.
+Ele simplesmente deixa de ser usado. Não execute `docker compose down -v` sem
+querer apagar também o PostgreSQL, o LocalStack e os volumes antigos.
 
-#### Comandos executados durante o build
+### Por que a Lambda não é invocada pela aplicação
 
-```dockerfile
-RUN pip install --no-cache-dir -r requirements.txt
-RUN chmod +x /entrypoint.sh
-```
+A aplicação apenas faz `PutObject` no bucket de originais. Quem invoca a
+Lambda é o evento `s3:ObjectCreated:*` configurado no LocalStack. Não existe
+botão nem endpoint que chame a Lambda manualmente; a única forma de gerar a
+miniatura é o upload no bucket correto.
 
-O primeiro comando instala as dependências. O segundo torna o `entrypoint.sh` executável dentro da imagem.
+### LocalStack 3.8 e licenciamento
 
-Migrations e `collectstatic` não são executados durante o build. Eles dependem do ambiente em execução, especialmente do PostgreSQL e dos volumes. Por isso são executados pelo `entrypoint.sh` quando o container inicia.
+O Compose fixa `localstack/localstack:3.8` para manter o funcionamento sem
+token de autenticação e com persistência local. Versões mais novas do
+LocalStack (a partir das mudanças de licenciamento de 2025/2026) podem exigir
+uma conta/workspace e um `LOCALSTACK_AUTH_TOKEN` (plano Hobby gratuito para uso
+não comercial ou planos pagos). Se o ambiente do avaliador usar uma versão
+nova, será necessário criar o token e adicioná-lo ao `.env`/Compose; o código
+da aplicação não muda. Consulte a documentação oficial de licenciamento antes
+de trocar a tag da imagem.
 
-#### Inicialização da aplicação
+A Lambda do LocalStack executa containers Docker reais. Por isso o serviço
+monta `/var/run/docker.sock` e usa `LAMBDA_DOCKER_NETWORK=rede_aplicacao`.
+Sem esse socket, a função fica em `Pending`/`Failed` com “Docker not
+available”.
 
-```dockerfile
-ENTRYPOINT ["/entrypoint.sh"]
-```
+---
 
-O `ENTRYPOINT` garante que todo container `web` execute o mesmo processo de preparação:
+## 8. Segurança implementada
 
-1. aguarda o PostgreSQL;
-2. executa `python manage.py migrate --noinput`;
-3. executa `python manage.py collectstatic --noinput`;
-4. inicia o. Gunicorn.
+- **Senhas:** `make_password`/`check_password` do Django (PBKDF2). O hash
+  nunca é devolvido ao frontend nem gravado em logs.
+- **Sessão:** `cycle_key()` no login, cookie `HttpOnly`, `SameSite=Lax`,
+  expiração de 8 horas. A sessão guarda apenas o identificador da conta.
+- **CSRF:** todos os formulários `POST` usam `{% csrf_token %}`; logout é
+  `POST` e usa `@require_POST`.
+- **Autorização:** o `user_id` vem sempre da sessão, nunca de um campo do
+  formulário. A chave S3 é validada contra `usuarios/<user_id>/` e contra
+  segmentos `..`.
+- **Validação de upload:** o conteúdo é aberto pelo Pillow; extensão e MIME do
+  navegador não são confiáveis. São aceitos JPEG, PNG, GIF e WEBP, com limite
+  de 10 MB por imagem e 5 imagens por envio (configurável).
+- **Buckets privados:** nenhum bucket é tornado público; o download é feito
+  por view autenticada.
+- **Nginx:** `client_max_body_size 55m`, compatível com 5 × 10 MB.
+- **Erros:** mensagens amigáveis ao usuário; detalhes técnicos apenas nos logs,
+  sem senhas ou hashes.
+- **Credenciais:** apenas valores fictícios (`test`/`test`) para o LocalStack;
+  `.env` está no `.gitignore` e `.env.example` não contém segredos reais.
+- **Open redirect:** o parâmetro `next` do login é validado com
+  `url_has_allowed_host_and_scheme`.
 
-O script usa `exec` no comando final para que o Gunicorn se torne o processo principal do container e receba corretamente sinais de parada do Docker.
+---
 
-#### Uso do Gunicorn
+## 9. Configuração e execução
+
+O passo a passo detalhado está em [COMANDOS.md](COMANDOS.md). Resumo:
 
 ```bash
-gunicorn config.wsgi:application --bind 0.0.0.0:8000
+cd django-upload-docker
+cp .env.example .env          # se ainda não existir um .env
+docker compose up --build -d
 ```
 
-O Gunicorn é usado porque o servidor de desenvolvimento do Django não é apropriado para o fluxo com Nginx. Ele executa o objeto WSGI criado em `app/config/wsgi.py`, representado por `config.wsgi:application`.
+Ou use o atalho `./executar.sh`, que confere Docker/Compose, sobe os containers
+e espera o provisionamento terminar.
 
-O bind `0.0.0.0:8000` faz o Gunicorn escutar em todas as interfaces do container. Isso é necessário para que o Nginx, que está em outro container, consiga acessá-lo por `web:8000`.
+Acesse **http://localhost:8090**. O LocalStack fica em
+**http://localhost:4566** e o PostgreSQL em **localhost:15432**.
 
-O Nginx não inicia o Django diretamente: ele apenas encaminha requisições para o Gunicorn. A separação permite que cada componente tenha uma responsabilidade clara.
+Principais variáveis do `.env`:
 
-#### Imagem de estágio único
+| Variável | Padrão | Função |
+|---|---|---|
+| `PORTA_NGINX` | `8090` | Porta HTTP publicada |
+| `PORTA_LOCALSTACK` | `4566` | Porta do LocalStack publicada em `127.0.0.1` |
+| `AWS_ENDPOINT_URL` | `http://localstack:4566` | Endpoint interno usado pelo Django |
+| `AWS_REGION` | `us-east-1` | Região simulada |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `test` / `test` | Credenciais fictícias |
+| `S3_BUCKET_ORIGINAIS` | `central-arquivos-originais` | Bucket dos uploads |
+| `S3_BUCKET_PROCESSADOS` | `central-arquivos-processados` | Bucket das miniaturas |
+| `DYNAMODB_TABLE_USUARIOS` | `usuarios` | Tabela de contas |
+| `DYNAMODB_INDICE_EMAIL` | `email-index` | Índice global de e-mail |
+| `LAMBDA_FUNCAO` | `processar-imagem` | Nome da função no LocalStack |
+| `LARGURA_MAXIMA_MINIATURA` | `300` | Largura máxima da miniatura |
+| `LIMITE_TAMANHO_IMAGEM_MB` | `10` | Limite por imagem |
+| `LIMITE_ARQUIVOS_POR_ENVIO` | `5` | Limite de imagens por envio |
 
-O Dockerfile utiliza um único estágio. Isso é suficiente porque não há frontend que precise ser compilado nem artefatos de build que precisem ser copiados para uma segunda imagem. Para este projeto local, a simplicidade facilita explicar o processo de construção e execução.
+A ordem de inicialização é garantida pelo Compose:
 
-### 3. Orquestração com Docker Compose
+```text
+db (healthy) ──────────────┐
+                           ├──> web ──> nginx
+localstack (healthy) ──> provisionador (completo) ──┘
+```
 
-O arquivo `docker-compose.yml` é o orquestrador da solução. Ele define quais containers serão criados, como serão configurados, como se comunicam e quais dados devem sobreviver à recriação dos containers.
+O `provisionador` só termina depois de criar os dois buckets, a tabela com o
+índice ativo, a função Lambda, a permissão e o evento S3. O `web` só inicia
+depois que ele termina com sucesso.
 
-#### Serviço `db` — PostgreSQL
+---
 
-| Item | Configuração atual |
+## 10. Roteiro de testes
+
+Os comandos completos estão em [COMANDOS.md](COMANDOS.md). Resumo dos testes
+obrigatórios:
+
+### Atividade 1 — S3
+
+- [ ] Subir o LocalStack e confirmar os dois buckets.
+- [ ] Enviar uma imagem e verificar o objeto no bucket original.
+- [ ] Confirmar que a imagem aparece na listagem e que a miniatura surge
+      automaticamente quando a Lambda termina.
+- [ ] Baixar o original e comparar o conteúdo.
+- [ ] Enviar arquivo inválido (texto com extensão `.png`) e confirmar erro.
+- [ ] Enviar arquivo acima de 10 MB e confirmar erro.
+
+### Atividade 2 — DynamoDB
+
+- [ ] Criar conta e confirmar o item na tabela `usuarios`.
+- [ ] Confirmar que `senha_hash` é um hash e não a senha original.
+- [ ] Tentar cadastrar o mesmo e-mail e confirmar erro.
+- [ ] Fazer login correto e acessar a área privada.
+- [ ] Fazer login com senha errada e confirmar erro.
+- [ ] Abrir `/` sem sessão e confirmar redirecionamento para `/login/`.
+- [ ] Fazer logout e confirmar que a área privada volta a ser bloqueada.
+
+### Atividade 3 — Lambda
+
+- [ ] Enviar uma imagem ao bucket original.
+- [ ] Confirmar o evento e a invocação nos logs do LocalStack.
+- [ ] Confirmar o arquivo `_thumb.jpg` no bucket de processados.
+- [ ] Verificar que a miniatura tem largura máxima de 300 px e proporção
+      preservada.
+- [ ] Confirmar que o bucket de processados não tem notificação configurada.
+- [ ] Confirmar que a aplicação mostra “Processada” e permite baixar a
+      miniatura.
+
+### Persistência e reinício
+
+- [ ] `docker compose down` (sem `-v`) e `docker compose up -d`: dados do
+      PostgreSQL, S3, DynamoDB e Lambda continuam.
+- [ ] `docker compose down -v` em ambiente descartável: tudo é recriado pelo
+      provisionador no próximo `up`.
+
+---
+
+## 11. Validação realizada neste ambiente
+
+O shell do assistente roda em um sandbox Flatpak/bwrap e não tem o binário
+`docker`. Porém, o LocalStack do ambiente estava em execução e acessível em
+`127.0.0.1:4566`, então a integração real com S3, DynamoDB e Lambda foi
+validada, além dos testes locais:
+
+| Verificação | Resultado |
 |---|---|
-| Serviço | `db` |
-| Imagem | `postgres:16-alpine` |
-| Porta interna | `5432` |
-| Porta publicada | `127.0.0.1:15432:5432` |
-| Rede | `rede_aplicacao` |
-| Volume | `postgres_data:/var/lib/postgresql/data` |
-| Variáveis | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` |
-| Dependências | nenhuma |
-| Inicialização | imagem oficial executa o PostgreSQL |
+| `python -m compileall app lambda infra` | OK |
+| `python manage.py check` | Nenhum problema |
+| `python manage.py makemigrations --check --dry-run` | Nenhuma alteração pendente |
+| `node --check app/envios/static/envios/app.js` | OK |
+| Validação de imagem com Pillow (válida/inválida) | OK |
+| Miniatura 800×600 → 300×225 e imagem 200×100 sem upscale | OK |
+| Formulário de upload múltiplo (2 arquivos) | OK |
+| Renderização de `/login/`, `/cadastro/` e bloqueio de `/` sem sessão | OK |
+| DynamoDB real: cadastro, hash, e-mail duplicado, login correto/errado | OK |
+| S3 real: upload, listagem, download e isolamento por usuário | OK |
+| Evento S3 → Lambda → bucket de processados, disparado automaticamente | OK |
+| Miniatura real gerada pela Lambda: 800×600 → 300×225 JPEG | OK |
+| Endpoint `/arquivos/<chave>/status/` antes e depois da Lambda | OK |
+| Isolamento entre contas no status e nos downloads | OK |
+| Navegador: login, cadastro, upload, drag-and-drop e atualização automática do card | OK |
 
-O PostgreSQL usa a variante Alpine para reduzir o tamanho da imagem. A porta é publicada somente em `127.0.0.1`, permitindo acesso local pelo DBeaver sem expor o banco diretamente à rede externa. O volume `postgres_data` preserva os dados.
+O que ainda depende do terminal do usuário:
 
-O healthcheck executa `pg_isready` para verificar se o banco está pronto. Essa informação é usada pelo serviço `web` na condição `service_healthy`.
+1. Rebuild do container `web` para servir os templates/CSS/JS novos em
+   `http://localhost:8090`: `docker compose up -d --build web` ou
+   `./executar.sh`.
+2. Confirmar o fluxo completo através do Nginx/Gunicorn no host.
 
-#### Serviço `web` — Django/Gunicorn
+O [COMANDOS.md](COMANDOS.md) traz os comandos exatos para essa validação.
 
-| Item | Configuração atual |
+---
+
+## 12. Critérios de aceitação
+
+| Critério | Situação |
 |---|---|
-| Serviço | `web` |
-| Imagem | construída localmente com `build: .` |
-| Base da imagem | `Dockerfile` |
-| Porta interna | `8000` |
-| Porta publicada | não publicada no host |
-| Rede | `rede_aplicacao` |
-| Volumes | `static_data:/app/staticfiles`, `media_data:/app/media` |
-| Variáveis | `DEBUG`, `SECRET_KEY`, hosts, CSRF e PostgreSQL |
-| Dependências | `db` saudável |
-| Inicialização | `entrypoint.sh` |
-
-O serviço `web` não precisa publicar a porta `8000`, porque somente o Nginx acessa o Django. Isso reduz a superfície de acesso e mantém a comunicação `web:8000` dentro da rede Docker.
-
-As variáveis de banco são recebidas pelo Compose e usadas em `settings.py`. O `entrypoint.sh` aguarda o banco, executa migrations, coleta estáticos e inicia o Gunicorn.
-
-#### Serviço `nginx` — proxy reverso
-
-| Item | Configuração atual |
-|---|---|
-| Serviço | `nginx` |
-| Imagem | `nginx:1.27-alpine` |
-| Porta interna | `80` |
-| Porta publicada | `${PORTA_NGINX:-8090}:80` |
-| Rede | `rede_aplicacao` |
-| Dependências | `web` iniciado |
-| Configuração | `./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro` |
-| Volumes | `static_data:/var/www/static:ro`, `media_data:/var/www/media:ro` |
-
-O Nginx é o único serviço HTTP publicado. O modo `ro` nos volumes impede que ele altere os arquivos enviados ou os estáticos. A dependência de `web` garante que o proxy seja iniciado depois do serviço da aplicação.
-
-#### Variáveis de ambiente e segurança
-
-O Compose recebe valores do `.env`. A senha é obrigatória e não possui fallback público:
-
-```yaml
-POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
-```
-
-O `.env` é ignorado pelo Git. O `.env.example` contém somente um placeholder para orientar a configuração local.
-
-#### Rede e dependências
-
-Todos os serviços participam da rede `rede_aplicacao`. A dependência de inicialização é:
-
-O diagrama de dependências e inicialização está centralizado em [docs/arquitetura.md](docs/arquitetura.md).
-
-![Dependências e inicialização dos serviços](docs/diagramas/dependencias.svg)
-
-O `depends_on` controla a ordem de criação/inicialização, mas não garante sozinho que o serviço esteja pronto para aceitar conexões. Por isso, o healthcheck confirma a disponibilidade real do PostgreSQL e o `entrypoint.sh` ainda aguarda uma conexão antes de iniciar a aplicação.
-
-### 4. Comunicação entre containers
-
-Os containers se comunicam por meio da rede Docker `rede_aplicacao`, declarada no `docker-compose.yml`. Quando serviços participam da mesma rede, o Docker fornece um DNS interno que resolve automaticamente os nomes dos serviços.
-
-Neste projeto, os nomes usados como hostnames são:
-
-- `nginx`: container do proxy reverso;
-- `web`: container Django/Gunicorn;
-- `db`: container PostgreSQL.
-
-Por isso, os containers não usam endereços IP fixos. Eles usam os nomes dos serviços, que continuam válidos mesmo quando o Docker recria os containers.
-
-#### Comunicação Nginx → Django/Gunicorn
-
-O navegador acessa o endereço publicado pelo Nginx:
-
-```text
-localhost:8090
-```
-
-O Docker encaminha essa porta para a porta `80` do container `nginx`. O Nginx analisa o caminho solicitado:
-
-- `/static/`: serve diretamente do volume de arquivos estáticos;
-- `/media/`: serve diretamente do volume de uploads;
-- outras rotas: encaminha para o Django.
-
-Para as rotas dinâmicas, o arquivo `nginx/default.conf` usa:
-
-```nginx
-proxy_pass http://web:8000;
-```
-
-O hostname `web` é resolvido pelo DNS interno da rede `rede_aplicacao`. A porta `8000` é a porta interna na qual o Gunicorn escuta dentro do container Django.
-
-O Django não precisa publicar a porta `8000` no Windows. O Nginx consegue acessá-la diretamente porque está na mesma rede Docker.
-
-#### Comunicação Django → PostgreSQL
-
-O Django recebe as configurações do banco pelas variáveis de ambiente do Compose:
-
-```text
-POSTGRES_HOST=db
-POSTGRES_PORT=5432
-```
-
-No `settings.py`, essas variáveis são utilizadas na configuração `DATABASES`. Quando o Django precisa consultar ou gravar dados, o driver Psycopg abre uma conexão para:
-
-```text
-db:5432
-```
-
-O nome `db` é resolvido para o endereço interno atual do container PostgreSQL. A porta `5432` é a porta interna do PostgreSQL dentro da rede Docker.
-
-#### Portas internas e portas externas
-
-Portas internas são usadas entre containers. Portas externas são publicadas no computador do usuário.
-
-```text
-Navegador -> localhost:8090 -> nginx:80
-Nginx -> web:8000
-Django -> db:5432
-DBeaver -> localhost:15432 -> db:5432
-```
-
-O mapeamento `127.0.0.1:15432:5432` permite que o DBeaver acesse o PostgreSQL sem tornar a porta do banco pública para outras máquinas. Já `web:8000` e `db:5432` não precisam de publicação externa, pois são comunicações internas.
-
-#### Diagrama da comunicação
-
-O diagrama de sequência da comunicação está em [docs/arquitetura.md](docs/arquitetura.md).
-
-![Comunicação entre os containers](docs/diagramas/comunicacao.svg)
-
-### 5. Nginx e proxy reverso
-
-O Nginx é o ponto de entrada HTTP da arquitetura e funciona como proxy reverso. O navegador não acessa diretamente o Gunicorn. Ele envia a requisição para `localhost:8090`, que é encaminhada pelo Docker para a porta `80` do container `nginx`.
-
-Depois de receber a requisição, o Nginx identifica o caminho da URL e escolhe uma destas ações:
-
-1. servir um arquivo estático diretamente;
-2. servir um arquivo enviado diretamente;
-3. encaminhar a requisição para Django/Gunicorn.
-
-#### Portas envolvidas
-
-```text
-Cliente -> localhost:8090 -> nginx:80
-Nginx -> web:8000 -> Gunicorn/Django
-```
-
-A porta `8090` é externa e pode ser alterada por `PORTA_NGINX`. A porta `80` é interna ao container Nginx. A porta `8000` é interna ao container `web` e não é publicada no computador.
-
-#### Configuração completa utilizada
-
-O arquivo [nginx/default.conf](nginx/default.conf) contém:
-
-```nginx
-server {
-    listen 80;
-    server_name _;
-    client_max_body_size 10m;
-
-    location /static/ {
-        alias /var/www/static/;
-        expires 7d;
-    }
-
-    location /media/ {
-        alias /var/www/media/;
-    }
-
-    location / {
-        proxy_pass http://web:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-#### `listen 80`
-
-```nginx
-listen 80;
-```
-
-Define a porta em que o Nginx escuta dentro do container. O Docker publica essa porta no computador por meio de `${PORTA_NGINX:-8090}:80`.
-
-#### `server_name _`
-
-```nginx
-server_name _;
-```
-
-Aceita requisições independentemente do hostname informado. Isso é conveniente para o ambiente local acessado por `localhost` ou `127.0.0.1`.
-
-#### `client_max_body_size 10m`
-
-```nginx
-client_max_body_size 10m;
-```
-
-Limita o corpo da requisição HTTP a 10 MB no proxy. Esse limite complementa a validação do Django em `forms.py`, evitando que arquivos maiores sejam encaminhados para a aplicação.
-
-#### `location /static/`
-
-```nginx
-location /static/ {
-    alias /var/www/static/;
-    expires 7d;
-}
-```
-
-O Nginx atende arquivos estáticos diretamente do volume `static_data`, montado no container em `/var/www/static`. `expires 7d` permite que o navegador mantenha esses arquivos em cache por sete dias.
-
-#### `location /media/`
-
-```nginx
-location /media/ {
-    alias /var/www/media/;
-}
-```
-
-O Nginx serve diretamente os uploads do volume `media_data`, montado em `/var/www/media`. Por isso o Django não precisa ler e transmitir o arquivo a cada download.
-
-#### `location /` e `proxy_pass`
-
-```nginx
-location / {
-    proxy_pass http://web:8000;
-}
-```
-
-Esse é o proxy reverso propriamente dito. Todas as rotas que não foram atendidas pelos blocos mais específicos são encaminhadas para o serviço `web`, na porta interna `8000`.
-
-O hostname `web` é resolvido pelo DNS interno da rede Docker `rede_aplicacao`.
-
-#### Headers encaminhados
-
-```nginx
-proxy_set_header Host $host;
-proxy_set_header X-Real-IP $remote_addr;
-proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-proxy_set_header X-Forwarded-Proto $scheme;
-```
-
-Esses headers preservam informações importantes da requisição original:
-
-- `Host`: hostname usado pelo cliente;
-- `X-Real-IP`: endereço IP original;
-- `X-Forwarded-For`: cadeia de proxies atravessados;
-- `X-Forwarded-Proto`: protocolo original, como HTTP ou HTTPS.
-
-O Nginx é importante porque centraliza o acesso HTTP, serve arquivos diretamente e mantém o Gunicorn acessível apenas pela rede interna do Docker.
-
-### 6. Persistência de dados
-
-Containers são voláteis: seus sistemas de arquivos internos podem ser perdidos quando o container é removido. Um volume é gerenciado separadamente pelo Docker e preserva os dados mesmo quando o container é recriado. Por isso, os dados que precisam sobreviver ao ciclo de vida dos containers são armazenados em volumes nomeados.
-
-Neste projeto, a persistência é analisada separadamente para o banco e para os arquivos enviados.
-
-#### Persistência do PostgreSQL
-
-O serviço `db` monta:
-
-```yaml
-postgres_data:/var/lib/postgresql/data
-```
-
-O volume `postgres_data` contém os arquivos físicos do PostgreSQL, incluindo:
-
-- tabelas da aplicação;
-- registros de usuários, sessões e permissões do Django;
-- histórico de migrations;
-- metadados dos uploads;
-- índices e demais estruturas internas do banco.
-
-Se o container `db` for removido, mas o volume for mantido, os dados continuam existindo. Quando o Compose criar um novo container PostgreSQL, ele montará novamente o mesmo `postgres_data` e o banco voltará com os dados anteriores.
-
-#### Persistência dos arquivos enviados
-
-O serviço `web` monta:
-
-```yaml
-media_data:/app/media
-```
-
-O Django grava os arquivos físicos nesse caminho. O volume `media_data` preserva:
-
-- PDFs;
-- imagens;
-- textos;
-- documentos DOCX;
-- apresentações PPTX;
-- demais arquivos aceitos pelo formulário.
-
-O Nginx monta o mesmo volume como somente leitura:
-
-```yaml
-media_data:/var/www/media:ro
-```
-
-Assim, o Django grava o upload e o Nginx lê o conteúdo para disponibilizá-lo em `/media/`. O registro no PostgreSQL e o arquivo físico são separados, mas relacionados pelo caminho armazenado no campo `FileField`.
-
-#### Persistência dos arquivos estáticos
-
-O volume `static_data` é montado em:
-
-```text
-web:   /app/staticfiles
-nginx: /var/www/static
-```
-
-Ele recebe os arquivos gerados por `collectstatic`, como o CSS da aplicação, e permite que o Nginx os sirva diretamente.
-
-#### O que acontece ao remover e recriar containers
-
-Com:
-
-```bash
-docker compose down
-```
-
-os containers são removidos, mas os volumes nomeados permanecem. Ao executar:
-
-```bash
-docker compose up -d
-```
-
-os containers são recriados e montam os mesmos volumes. Portanto:
-
-- os dados do PostgreSQL continuam disponíveis;
-- os metadados dos uploads continuam disponíveis;
-- os arquivos enviados continuam disponíveis;
-- os arquivos estáticos são reutilizados ou atualizados pelo `collectstatic`.
-
-Com:
-
-```bash
-docker compose down -v
-```
-
-os volumes também são removidos. Nesse caso, a recriação inicia um PostgreSQL vazio e os uploads desaparecem. Esse comando só deve ser usado quando for intencional apagar banco, arquivos enviados e estáticos.
-
-#### Resumo dos volumes
-
-| Volume | Serviço que grava | Caminho principal | O que preserva |
-|---|---|---|---|
-| `postgres_data` | `db` | `/var/lib/postgresql/data` | banco PostgreSQL |
-| `media_data` | `web` | `/app/media` | arquivos enviados |
-| `static_data` | `web` | `/app/staticfiles` | CSS e arquivos estáticos |
-
-![Persistência dos dados em volumes Docker](docs/diagramas/persistencia.svg)
-
-### 7. Fluxo do upload de um arquivo
-
-O caminho aproximado do arquivo é:
-
-```text
-Navegador → Nginx → Django/Gunicorn → Volume media_data
-                                      └→ PostgreSQL para metadados
-```
-
-#### Passo a passo
-
-1. **Seleção no navegador**: o usuário escolhe um arquivo na página inicial. O template usa um elemento `<input type="file">` dentro de um formulário HTML.
-2. **Preparação da requisição**: o formulário usa `method="post"`, `enctype="multipart/form-data"` e `{% csrf_token %}`. O arquivo é enviado junto com os dados do formulário.
-3. **Entrada pelo Nginx**: o navegador envia a requisição para `localhost:8090`. O Nginx recebe na porta `80` do container e encaminha a rota `/enviar/` para `web:8000`.
-4. **Recebimento pelo Django**: o Gunicorn entrega a requisição ao Django. A rota `enviar/` está definida em `app/envios/urls.py` e aponta para `views.enviar_arquivo`.
-5. **Separação dos dados**: a view usa `request.POST` para os campos comuns e `request.FILES` para o arquivo enviado.
-6. **Validação**: `ArquivoEnviadoForm`, em `forms.py`, verifica a extensão e o tamanho. São aceitos PDF, PNG, JPG, JPEG, TXT, DOCX e PPTX, com limite de 10 MB.
-7. **Criação dos metadados**: o método `save()` do formulário preenche `nome_original` e `tamanho_em_bytes` no objeto `ArquivoEnviado`.
-8. **Armazenamento físico**: o `FileField` salva o conteúdo em `/app/media/arquivos/ano/mês/dia/`. Esse caminho está montado no volume persistente `media_data`.
-9. **Armazenamento no PostgreSQL**: o Django grava no banco o caminho do arquivo, nome original, tamanho e data de envio. O PostgreSQL não armazena o binário nesse modelo; ele guarda os metadados e a referência ao arquivo.
-10. **Resposta ao usuário**: após salvar, a view cria uma mensagem de sucesso e redireciona para a página inicial.
-11. **Listagem**: a página consulta `ArquivoEnviado.objects.all()` e mostra os metadados dos arquivos registrados.
-12. **Acesso posterior**: ao clicar no arquivo, o navegador solicita uma URL `/media/`. O Nginx lê o mesmo volume `media_data`, montado em `/var/www/media`, e entrega o conteúdo.
-
-O arquivo `forms.py` valida a entrada no backend, mas atualmente verifica apenas extensão e tamanho. Ele não inspeciona o conteúdo real do arquivo. Isso é suficiente para o projeto local, mas uma aplicação pública deveria validar MIME/magic bytes e usar análise antivírus.
-
-#### Diagrama de sequência UML do upload
-
-O diagrama de sequência do upload está em [docs/arquitetura.md](docs/arquitetura.md).
-
-![Diagrama de sequência UML do upload](docs/diagramas/sequencia-upload.svg)
-
-### 8. Análise técnica da solução
-
-A arquitetura atende ao objetivo de demonstrar uma aplicação Django containerizada com proxy reverso, PostgreSQL e armazenamento persistente. As decisões são adequadas para um ambiente local de estudo, mas ainda existem diferenças importantes em relação a uma implantação de produção.
-
-#### Vantagens da arquitetura implementada
-
-1. **Separação de responsabilidades:** Nginx, Django/Gunicorn e PostgreSQL executam em serviços diferentes. Cada componente possui uma função clara e pode ser explicado, atualizado ou diagnosticado separadamente.
-2. **Persistência independente da vida dos containers:** os volumes `postgres_data` e `media_data` preservam o banco e os arquivos enviados mesmo quando os containers são removidos e recriados.
-3. **Comunicação interna organizada:** os serviços usam a rede Docker `rede_aplicacao` e nomes de serviço (`web` e `db`) em vez de IPs fixos. Isso simplifica a configuração e permite que o Compose recrie os containers sem quebrar a comunicação.
-
-#### Limitações ou problemas da implementação atual
-
-1. **Upload sem autenticação:** qualquer pessoa que consiga acessar a aplicação pode enviar arquivos, consumir espaço e visualizar a lista de uploads.
-2. **Arquivos publicamente acessíveis:** o Nginx serve `/media/` diretamente, sem verificar se o usuário possui autorização para acessar o arquivo.
-3. **Validação limitada:** o backend verifica extensão e tamanho, mas não verifica o conteúdo real, o MIME/magic bytes ou a presença de malware.
-
-Também existem limitações operacionais, como ausência de rate limiting, quotas, backups automatizados, observabilidade e HTTPS. Essas limitações são aceitáveis para o escopo local, mas não para uma aplicação pública.
-
-#### Melhorias para aproximar a solução de produção
-
-1. **Adicionar autenticação e autorização:** associar cada arquivo ao usuário proprietário e liberar upload/download somente conforme as permissões.
-2. **Fortalecer o pipeline de arquivos:** validar MIME e magic bytes, usar antivírus, aplicar quotas, limitar requisições e armazenar arquivos em área não pública ou com URLs temporárias.
-3. **Fortalecer a operação:** configurar HTTPS e headers de segurança, usar Docker Secrets ou um gerenciador externo, executar containers como usuário não-root, criar backups do PostgreSQL, healthchecks completos, logs estruturados e monitoramento.
-
-Essas melhorias não são necessárias para demonstrar a arquitetura local, mas reduzem riscos de segurança, perda de dados e indisponibilidade em um ambiente real.
+| Projeto continua em Django/Python | Atendido |
+| Nginx e Gunicorn continuam funcionando | Configurados; rebuild do `web` pendente para validar a UI nova pelo Nginx |
+| Docker Compose sobe o ambiente completo | Configurado; o shell do assistente não tem Docker, mas o LocalStack do host foi usado nos testes |
+| LocalStack disponibiliza S3, DynamoDB e Lambda | Validado no LocalStack real |
+| Imagens armazenadas no bucket S3 | Implementado e testado no S3 real |
+| Aplicação lista imagens do S3 | Implementado e testado |
+| Download recupera do S3 | Implementado e testado |
+| Cadastro grava usuário no DynamoDB | Implementado e testado no DynamoDB real |
+| Login consulta DynamoDB e verifica hash | Implementado e testado no DynamoDB real |
+| Sessões e logout funcionam | Implementado e testado |
+| Upload no bucket original aciona a Lambda | Validado automaticamente no LocalStack real |
+| Lambda processa e envia a outro bucket | Validado no LocalStack real (300×225 JPEG) |
+| Aplicação permite visualizar/baixar o resultado | Implementado e testado |
+| Miniatura aparece sem recarregar a página | Implementado e validado no navegador |
+| README explica execução e testes de ponta a ponta | Atendido (README + COMANDOS.md) |
+| Nenhuma credencial real ou senha em texto puro | Atendido |
+
+---
+
+## 13. Documentação relacionada
+
+- [COMANDOS.md](COMANDOS.md) — subir, testar, inspecionar e limpar o ambiente.
+- [docs/arquitetura.md](docs/arquitetura.md) — diagramas de implantação,
+  componentes, sequência e persistência atualizados.

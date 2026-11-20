@@ -1,6 +1,104 @@
+# ---------------------------------------------------------------------------
+# Segredos e configuração local
+# O .env.example deve continuar versionado; o .env real nunca deve ser.
+# ---------------------------------------------------------------------------
 .env
+.env.*
+!.env.example
+.envrc
+.aws/
+secrets.json
+local_settings.py
+settings_local.py
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ---------------------------------------------------------------------------
+# Django
+# ---------------------------------------------------------------------------
+db.sqlite3
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
 staticfiles/
 media/
-.venv/
+mediafiles/
+logs/
+*.log
+
+# ---------------------------------------------------------------------------
+# Testes, cobertura e ferramentas de análise
+# ---------------------------------------------------------------------------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+test-results/
+*.cover
+*.prof
+
+# ---------------------------------------------------------------------------
+# Docker / LocalStack
+# ---------------------------------------------------------------------------
+.localstack/
+localstack_data/
+.localstack-data/
+docker-compose.override.yml
+*.pid
+
+# ---------------------------------------------------------------------------
+# Lambda e empacotamento
+# ---------------------------------------------------------------------------
+lambda/build/
+lambda/package/
+lambda/*.zip
+*.zip
+
+# ---------------------------------------------------------------------------
+# Editores e sistema operacional
+# ---------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------------------
+# Arquivos temporários
+# ---------------------------------------------------------------------------
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
