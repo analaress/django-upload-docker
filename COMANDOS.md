@@ -750,6 +750,13 @@ Isso remove `postgres_data`, `static_data` e `localstack_persist_data`. O
 provisionador recria os recursos AWS simulados; as contas e imagens antigas
 **não** voltam.
 
+Se o diretório `.localstack-backup/` existir, remova-o também. Caso contrário,
+o provisionador restaura o snapshot antigo no próximo `up`:
+
+```bash
+rm -rf .localstack-backup
+```
+
 ### 7.3 Backup e restauração
 
 O serviço `provisionador` monta `./.localstack-backup` em `/backup`. No

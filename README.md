@@ -625,7 +625,8 @@ obrigatórios:
       o evento S3 são recriados pelo provisionador.
 - [ ] `docker compose down -v` em ambiente descartável: o volume
       `localstack_persist_data` é removido; o provisionador recria os recursos
-      vazios no próximo `up`.
+      vazios no próximo `up` (remova também `.localstack-backup/` se quiser
+      impedir a restauração do snapshot antigo).
 - [ ] Se a interface parecer antiga, confirmar que o `web` foi reconstruído
       com `docker compose up -d --build` e recarregar a página.
 
