@@ -9,6 +9,7 @@ class ArquivoEnviadoForm(forms.ModelForm):
     class Meta:
         model = ArquivoEnviado
         fields = ["arquivo"]
+
     def clean_arquivo(self):
         arquivo = self.cleaned_data["arquivo"]
         extensao = Path(arquivo.name).suffix.lower()
@@ -20,6 +21,7 @@ class ArquivoEnviadoForm(forms.ModelForm):
         if arquivo.size > self.tamanho_maximo:
             raise forms.ValidationError("O arquivo não pode ultrapassar 10 MB.")
         return arquivo
+        
     def save(self, commit=True):
         instancia = super().save(commit=False)
         instancia.nome_original = self.cleaned_data["arquivo"].name

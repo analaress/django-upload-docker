@@ -1,5 +1,50 @@
-{% extends "envios/base.html" %}{% block conteudo %}<a class="botao" href="{% url 'enviar_arquivo' %}">Enviar novo
-    arquivo</a>
-<h2>Arquivos enviados</h2>{% if arquivos %}<ul>{% for arquivo in arquivos %}<li><a href="{{ arquivo.arquivo.url }}"
-            target="_blank">{{ arquivo.nome_original }}</a> - {{ arquivo.enviado_em|date:"d/m/Y H:i" }}</li>{% endfor %}
-</ul>{% else %}<p>Nenhum arquivo enviado ainda.</p>{% endif %}{% endblock %}
+{% extends "envios/base.html" %}
+{% block conteudo %}
+<section class="zona-upload-cartao">
+    <form method="post" action="{% url 'enviar_arquivo' %}" enctype="multipart/form-data" class="formulario">
+        {% csrf_token %}
+        <label for="id_arquivo" class="botao-upload">
+            <svg class="icone-upload" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M16 16l-4-4-4 4" />
+                <path d="M12 12v8" />
+                <path d="M20 16.5a4.5 4.5 0 0 0-2.8-4.2A5.5 5.5 0 0 0 6.5 10a4 4 0 0 0 .5 8H8" />
+            </svg>
+            <strong>Arraste arquivos aqui ou clique para escolher</strong>
+            <span class="detalhe-upload">
+                <span>Formatos aceitos: PDF, PNG, JPG, TXT, DOCX e PPTX</span>
+                <span>Tamanho máximo por arquivo: 10 MB</span>
+            </span>
+            <span id="nome-arquivo" class="nome-arquivo" aria-live="polite">Nenhum arquivo selecionado</span>
+            <input id="id_arquivo" type="file" name="arquivo" required onchange="mostrarNomeArquivo(this)">
+        </label>
+        <button class="botao" type="submit">Enviar arquivo</button>
+    </form>
+</section>
+<div class="cabecalho-arquivos">
+    <h2>Arquivos enviados <span>({{ arquivos|length }})</span></h2>
+    <a class="botao-atualizar" href="{% url 'pagina_inicial' %}">↻&nbsp;&nbsp;Atualizar</a>
+</div>
+<section class="cartao cartao-arquivos">
+    {% if arquivos %}
+    <ul class="lista">
+        {% for arquivo in arquivos %}
+        <li class="item-arquivo">
+            <div>
+                <p>{{ arquivo.nome_original }}</p>
+                <span>{{ arquivo.enviado_em|date:"d/m/Y H:i" }}</span>
+            </div>
+            <a class="link-arquivo" href="{{ arquivo.arquivo.url }}" target="_blank" rel="noopener">Acessar arquivo</a>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="vazio">Nenhum arquivo enviado ainda.</p>
+    {% endif %}
+</section>
+<script>
+    function mostrarNomeArquivo(input) {
+        const nome = input.files.length ? input.files[0].name : "Nenhum arquivo selecionado";
+        document.getElementById("nome-arquivo").textContent = nome;
+    }
+</script>
+{% endblock %}
