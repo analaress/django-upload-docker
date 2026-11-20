@@ -144,7 +144,6 @@ def pagina_inicial(request):
         "envios/pagina_inicial.html",
         {
             "itens": itens,
-            "formulario_upload": FormularioUploadImagens(),
             "limite_mb": settings.LIMITE_TAMANHO_IMAGEM_MB,
             "limite_arquivos": settings.LIMITE_ARQUIVOS_POR_ENVIO,
             "bucket_originais": settings.S3_BUCKET_ORIGINAIS,
@@ -155,71 +154,74 @@ def pagina_inicial(request):
 
 @login_obrigatorio
 def enviar_arquivo(request):
-    formulario = FormularioUploadImagens(request.POST or None, request.FILES or None)
+    """Recebe o POST da zona de upload da página inicial.
 
-    if request.method == "POST" and formulario.is_valid():
-        imagens = formulario.cleaned_data["imagens"]
-        enviados = 0
-        erros: list[str] = []
-
-        for imagem in imagens:
-            try:
-                _formato, content_type, extensao = validar_imagem(imagem)
-                chave = enviar_imagem(
-                    usuario_id=request.usuario.id,
-                    conteudo=imagem.read(),
-                    content_type=content_type,
-                    extensao=extensao,
-                )
-            except ImagemInvalida as exc:
-                erros.append(f"{imagem.name}: {exc}")
-                continue
-            except ErroS3:
-                erros.append(f"{imagem.name}: não foi possível enviar ao S3.")
-                continue
-
-            enviados += 1
-            try:
-                ArquivoEnviado.objects.create(
-                    proprietario_id=request.usuario.id,
-                    proprietario_email=request.usuario.email,
-                    chave_s3=chave,
-                    nome_original=imagem.name,
-                    tamanho_em_bytes=imagem.size,
-                    content_type=content_type,
-                )
-            except DatabaseError:
-                # A imagem já está no S3; a listagem usa o S3 como fonte de
-                # verdade e continua funcionando sem o metadado local.
-                logger.exception("Falha ao registrar metadados no PostgreSQL")
-
-        if enviados:
-            if enviados == 1:
-                mensagem = (
-                    "1 imagem enviada para o S3. A miniatura aparece "
-                    "automaticamente assim que a Lambda termina."
-                )
-            else:
-                mensagem = (
-                    f"{enviados} imagens enviadas para o S3. As miniaturas "
-                    "aparecem automaticamente assim que a Lambda termina."
-                )
-            messages.success(request, mensagem)
-        for erro in erros:
-            messages.error(request, erro)
-        if not enviados and not erros:
-            messages.error(request, "Nenhuma imagem foi enviada.")
+    O upload e a listagem ficam na mesma página. Esta rota existe apenas como
+    endpoint do formulário; acessá-la por GET (ou com dados inválidos) volta
+    para a página inicial com uma mensagem.
+    """
+    if request.method != "POST":
         return redirect("pagina_inicial")
 
-    return render(
-        request,
-        "envios/enviar_arquivo.html",
-        {
-            "formulario": formulario,
-            "limite_mb": settings.LIMITE_TAMANHO_IMAGEM_MB,
-            "limite_arquivos": settings.LIMITE_ARQUIVOS_POR_ENVIO,
-        },
-    )
+    formulario = FormularioUploadImagens(request.POST, request.FILES)
+    if not formulario.is_valid():
+        for erros in formulario.errors.values():
+            for erro in erros:
+                messages.error(request, erro)
+        return redirect("pagina_inicial")
+
+    imagens = formulario.cleaned_data["imagens"]
+    enviados = 0
+    erros: list[str] = []
+
+    for imagem in imagens:
+        try:
+            _formato, content_type, extensao = validar_imagem(imagem)
+            chave = enviar_imagem(
+                usuario_id=request.usuario.id,
+                conteudo=imagem.read(),
+                content_type=content_type,
+                extensao=extensao,
+            )
+        except ImagemInvalida as exc:
+            erros.append(f"{imagem.name}: {exc}")
+            continue
+        except ErroS3:
+            erros.append(f"{imagem.name}: não foi possível enviar ao S3.")
+            continue
+
+        enviados += 1
+        try:
+            ArquivoEnviado.objects.create(
+                proprietario_id=request.usuario.id,
+                proprietario_email=request.usuario.email,
+                chave_s3=chave,
+                nome_original=imagem.name,
+                tamanho_em_bytes=imagem.size,
+                content_type=content_type,
+            )
+        except DatabaseError:
+            # A imagem já está no S3; a listagem usa o S3 como fonte de
+            # verdade e continua funcionando sem o metadado local.
+            logger.exception("Falha ao registrar metadados no PostgreSQL")
+
+    if enviados:
+        if enviados == 1:
+            mensagem = (
+                "1 imagem enviada para o S3. A miniatura aparece "
+                "automaticamente assim que a Lambda termina."
+            )
+        else:
+            mensagem = (
+                f"{enviados} imagens enviadas para o S3. As miniaturas "
+                "aparecem automaticamente assim que a Lambda termina."
+            )
+        messages.success(request, mensagem)
+    for erro in erros:
+        messages.error(request, erro)
+    if not enviados and not erros:
+        messages.error(request, "Nenhuma imagem foi enviada.")
+    return redirect("pagina_inicial")
 
 
 def cadastro(request):

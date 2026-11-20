@@ -116,7 +116,7 @@ justificada na seção 7.
 
 | Requisito | Onde está implementado |
 |---|---|
-| Enviar imagens do navegador ao backend | Formulário em `app/envios/templates/envios/pagina_inicial.html` e `enviar_arquivo.html`; view `enviar_arquivo` em `app/envios/views.py` |
+| Enviar imagens do navegador ao backend | Formulário na própria `app/envios/templates/envios/pagina_inicial.html`; view `enviar_arquivo` em `app/envios/views.py` (endpoint POST, sem tela separada) |
 | Validar tipo/tamanho | `app/envios/validacao.py` (`validar_imagem`) e `app/envios/forms.py` (`FormularioUploadImagens`) |
 | Armazenar o conteúdo no bucket S3 | `app/envios/aws/arquivos.py` (`enviar_imagem` → `put_object`) |
 | Listar os objetos do bucket | `listar_imagens_do_usuario` em `app/envios/aws/arquivos.py` (`list_objects_v2`) |
