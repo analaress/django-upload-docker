@@ -21,9 +21,11 @@ services:
     ports:
       - "127.0.0.1:${PORTA_LOCALSTACK:-4566}:4566"
     environment:
-      SERVICES: s3
+      SERVICES: s3,dynamodb
       DEBUG: ${LOCALSTACK_DEBUG:-0}
+      PERSISTENCE: "1"
       AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+      DYNAMODB_TABLE_USUARIOS: ${DYNAMODB_TABLE_USUARIOS:-usuarios}
     volumes:
       - localstack_data:/var/lib/localstack
       - /var/run/docker.sock:/var/run/docker.sock

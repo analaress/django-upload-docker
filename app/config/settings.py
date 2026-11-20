@@ -80,3 +80,4 @@ AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "test")
 S3_BUCKET_ORIGINAIS = os.getenv(
     "S3_BUCKET_ORIGINAIS", "central-arquivos-originais"
 )
+DYNAMODB_TABLE_USUARIOS = os.getenv("DYNAMODB_TABLE_USUARIOS", "usuarios")

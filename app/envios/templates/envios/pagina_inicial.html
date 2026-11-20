@@ -1,28 +1,36 @@
 {% extends "envios/base.html" %}
+{% block cabecalho %}
+<header class="cabecalho-app">
+    <div class="marca-app">
+        <span class="marca-upload" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" /></svg>
+        </span>
+        <h1>Upload de Arquivos</h1>
+    </div>
+    <div class="conta-app">
+        <span class="usuario-chip"><span class="avatar">{{ request.session.usuario.nome|first|upper }}</span>{{ request.session.usuario.email }}</span>
+        <a class="botao-sair" href="{% url 'logout' %}"><span aria-hidden="true">↪</span> Sair</a>
+    </div>
+</header>
+{% endblock %}
 {% block conteudo %}
-<section class="zona-upload-cartao">
-    <form method="post" action="{% url 'enviar_arquivo' %}" enctype="multipart/form-data" class="formulario">
+<section class="upload-cartao">
+    <form method="post" action="{% url 'enviar_arquivo' %}" enctype="multipart/form-data" class="formulario formulario-upload">
         {% csrf_token %}
-        <label for="id_arquivo" class="botao-upload">
-            <svg class="icone-upload" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M16 16l-4-4-4 4" />
-                <path d="M12 12v8" />
-                <path d="M20 16.5a4.5 4.5 0 0 0-2.8-4.2A5.5 5.5 0 0 0 6.5 10a4 4 0 0 0 .5 8H8" />
-            </svg>
-            <strong>Arraste arquivos aqui ou clique para escolher</strong>
-            <span class="detalhe-upload">
-                <span>Formatos aceitos: PDF, PNG, JPG, TXT, DOCX e PPTX</span>
-                <span>Tamanho máximo por arquivo: 10 MB</span>
+        <label for="id_arquivo" class="botao-upload upload-dropzone">
+            <span class="icone-upload" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" /></svg>
             </span>
-            <span id="nome-arquivo" class="nome-arquivo" aria-live="polite">Nenhum arquivo selecionado</span>
+            <strong>Arraste um arquivo aqui ou <em>clique para escolher</em></strong>
+            <span class="detalhe-upload">PDF, PNG, JPG, TXT, DOCX e PPTX · até 10 MB</span>
+            <span id="nome-arquivo" class="nome-arquivo" aria-live="polite"></span>
             <input id="id_arquivo" type="file" name="arquivo" required onchange="mostrarNomeArquivo(this)">
         </label>
-        <button class="botao" type="submit">Enviar arquivo</button>
+        <button id="botao-enviar" class="botao botao-upload-arquivo" type="submit" disabled>Enviar arquivo</button>
     </form>
 </section>
 <div class="cabecalho-arquivos">
-    <h2>Arquivos enviados <span>({{ arquivos|length }})</span></h2>
-    <a class="botao-atualizar" href="{% url 'pagina_inicial' %}">↻&nbsp;&nbsp;Atualizar</a>
+    <h2>Arquivos enviados <span class="contador-arquivos">{{ arquivos|length }}</span></h2>
 </div>
 <section class="cartao cartao-arquivos">
     {% if arquivos %}
@@ -33,7 +41,7 @@
                 <p>{{ arquivo.nome_original }}</p>
                 <span>{{ arquivo.enviado_em|date:"d/m/Y H:i" }}</span>
             </div>
-            <a class="link-arquivo" href="{% url 'baixar_arquivo' arquivo.id %}" target="_blank" rel="noopener">Baixar arquivo</a>
+            <a class="link-arquivo" href="{% url 'baixar_arquivo' arquivo.id %}" download>Baixar arquivo</a>
         </li>
         {% endfor %}
     </ul>
@@ -43,8 +51,9 @@
 </section>
 <script>
     function mostrarNomeArquivo(input) {
-        const nome = input.files.length ? input.files[0].name : "Nenhum arquivo selecionado";
-        document.getElementById("nome-arquivo").textContent = nome;
+        const selecionado = input.files.length > 0;
+        document.getElementById("nome-arquivo").textContent = selecionado ? input.files[0].name : "";
+        document.getElementById("botao-enviar").disabled = !selecionado;
     }
 </script>
 {% endblock %}
