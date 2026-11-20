@@ -21,11 +21,13 @@ services:
     ports:
       - "127.0.0.1:${PORTA_LOCALSTACK:-4566}:4566"
     environment:
-      SERVICES: s3,dynamodb
+      SERVICES: s3,dynamodb,lambda
       DEBUG: ${LOCALSTACK_DEBUG:-0}
       PERSISTENCE: "1"
       AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
       DYNAMODB_TABLE_USUARIOS: ${DYNAMODB_TABLE_USUARIOS:-usuarios}
+      LAMBDA_FUNCAO: ${LAMBDA_FUNCAO:-processar-imagem}
+      LAMBDA_DOCKER_NETWORK: rede_aplicacao
     volumes:
       - localstack_data:/var/lib/localstack
       - /var/run/docker.sock:/var/run/docker.sock
@@ -36,6 +38,23 @@ services:
       retries: 20
       start_period: 10s
     networks: [rede_aplicacao]
+  provisionador:
+    build:
+      context: .
+      dockerfile: infra/localstack/Dockerfile
+    environment:
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+      S3_BUCKET_ORIGINAIS: ${S3_BUCKET_ORIGINAIS:-central-arquivos-originais}
+      S3_BUCKET_PROCESSADOS: ${S3_BUCKET_PROCESSADOS:-central-arquivos-processados}
+      LAMBDA_FUNCAO: ${LAMBDA_FUNCAO:-processar-imagem}
+    depends_on:
+      localstack:
+        condition: service_healthy
+    networks: [rede_aplicacao]
+    restart: "no"
   web:
     build: .
     cpus: "0.75"
@@ -55,9 +74,12 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
       S3_BUCKET_ORIGINAIS: ${S3_BUCKET_ORIGINAIS:-central-arquivos-originais}
+      S3_BUCKET_PROCESSADOS: ${S3_BUCKET_PROCESSADOS:-central-arquivos-processados}
+      LAMBDA_FUNCAO: ${LAMBDA_FUNCAO:-processar-imagem}
     volumes: [static_data:/app/staticfiles, media_data:/app/media]
     depends_on:
       db: {condition: service_healthy}
+      provisionador: {condition: service_completed_successfully}
     networks: [rede_aplicacao]
   nginx:
     image: nginx:1.27-alpine
@@ -74,3 +96,4 @@ volumes:
   localstack_data:
 networks:
   rede_aplicacao:
+    name: rede_aplicacao

@@ -4,4 +4,3 @@ __pycache__/
 staticfiles/
 media/
 .venv/
-docs/superpowers/specs/2026-11-20-atividades-localstack-design.md

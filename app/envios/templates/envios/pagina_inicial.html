@@ -15,7 +15,7 @@
 {% endblock %}
 {% block conteudo %}
 <section class="upload-cartao">
-    <form method="post" action="{% url 'enviar_arquivo' %}" enctype="multipart/form-data" class="formulario formulario-upload">
+    <form id="formulario-upload" method="post" action="{% url 'enviar_arquivo' %}" enctype="multipart/form-data" class="formulario formulario-upload">
         {% csrf_token %}
         <label for="id_arquivo" class="botao-upload upload-dropzone">
             <span class="icone-upload" aria-hidden="true">
@@ -24,9 +24,10 @@
             <strong>Arraste um arquivo aqui ou <em>clique para escolher</em></strong>
             <span class="detalhe-upload">PDF, PNG, JPG, TXT, DOCX e PPTX · até 10 MB</span>
             <span id="nome-arquivo" class="nome-arquivo" aria-live="polite"></span>
+            <span id="indicador-upload" class="indicador-upload" aria-hidden="true"></span>
             <input id="id_arquivo" type="file" name="arquivo" required onchange="mostrarNomeArquivo(this)">
         </label>
-        <button id="botao-enviar" class="botao botao-upload-arquivo" type="submit" disabled>Enviar arquivo</button>
+        <button id="botao-enviar" class="botao botao-upload-arquivo" type="submit" disabled><span id="texto-botao-enviar">Enviar arquivo</span></button>
     </form>
 </section>
 <div class="cabecalho-arquivos">
@@ -37,11 +38,44 @@
     <ul class="lista">
         {% for arquivo in arquivos %}
         <li class="item-arquivo">
+            {% if arquivo.eh_imagem %}
+            <div class="preview-arquivo">
+                {% if arquivo.miniatura_disponivel %}
+                <img class="miniatura-arquivo visivel" src="{% url 'visualizar_miniatura' arquivo.id %}" alt="Prévia processada de {{ arquivo.nome_original }}">
+                {% else %}
+                <span class="placeholder-extensao">{{ arquivo.extensao_exibicao }}</span>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="preview-arquivo placeholder-arquivo" aria-label="Arquivo {{ arquivo.extensao_exibicao }}">
+                <span>{{ arquivo.extensao_exibicao }}</span>
+            </div>
+            {% endif %}
             <div>
                 <p>{{ arquivo.nome_original }}</p>
                 <span>{{ arquivo.enviado_em|date:"d/m/Y H:i" }}</span>
             </div>
-            <a class="link-arquivo" href="{% url 'baixar_arquivo' arquivo.id %}" download>Baixar arquivo</a>
+            <div class="acoes-arquivo">
+                {% if arquivo.eh_imagem or arquivo.eh_pdf %}
+                <a class="badge-acao badge-visualizar" href="{% url 'visualizar_arquivo' arquivo.id %}" target="_blank" rel="noopener" aria-label="Visualizar {{ arquivo.nome_original }}" title="Visualizar arquivo">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z" /><circle cx="12" cy="12" r="2.5" /></svg>
+                </a>
+                {% if arquivo.eh_imagem and arquivo.miniatura_disponivel %}
+                <a class="badge-acao badge-miniatura" href="{% url 'visualizar_miniatura' arquivo.id %}" target="_blank" rel="noopener" aria-label="Visualizar miniatura de {{ arquivo.nome_original }}" title="Visualizar miniatura JPG">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3z" /><circle cx="8" cy="10" r="1.5" /><path d="m5 17 4-4 3 3 2-2 5 3" /></svg>
+                </a>
+                {% endif %}
+                {% endif %}
+                <a class="badge-acao badge-baixar" href="{% url 'baixar_arquivo' arquivo.id %}" download aria-label="Baixar {{ arquivo.nome_original }}" title="Baixar arquivo">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 17v2a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2" /></svg>
+                </a>
+                <form method="post" action="{% url 'excluir_arquivo' arquivo.id %}" onsubmit="return confirm('Remover este arquivo?');">
+                    {% csrf_token %}
+                    <button class="badge-acao badge-remover" type="submit" aria-label="Remover {{ arquivo.nome_original }}" title="Remover arquivo">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16m-10 4v6m4-6v6M9 7V4h6v3m-9 0 1 13h10l1-13" /></svg>
+                    </button>
+                </form>
+            </div>
         </li>
         {% endfor %}
     </ul>
@@ -55,5 +89,14 @@
         document.getElementById("nome-arquivo").textContent = selecionado ? input.files[0].name : "";
         document.getElementById("botao-enviar").disabled = !selecionado;
     }
+
+    document.getElementById("formulario-upload").addEventListener("submit", function () {
+        const botao = document.getElementById("botao-enviar");
+        botao.disabled = true;
+        botao.classList.add("botao-enviando");
+        document.getElementById("texto-botao-enviar").textContent = "Enviando arquivo...";
+        document.getElementById("indicador-upload").classList.add("visivel");
+    });
+
 </script>
 {% endblock %}

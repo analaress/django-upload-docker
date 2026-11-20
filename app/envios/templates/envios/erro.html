@@ -1,0 +1,8 @@
+{% extends "envios/base.html" %}
+{% block conteudo %}
+<section class="cartao erro-pagina">
+    <p class="erro-codigo">{{ codigo }}</p>
+    <h2>{{ mensagem }}</h2>
+    <a class="botao" href="{% url 'pagina_inicial' %}">Voltar para arquivos</a>
+</section>
+{% endblock %}

@@ -44,9 +44,29 @@ def enviar_arquivo(chave: str, arquivo: BinaryIO, *, content_type: str) -> None:
     )
 
 
-def obter_arquivo(chave: str):
-    """Obtém um objeto do bucket de originais."""
+def obter_arquivo(chave: str, *, bucket: str | None = None):
+    """Obtém um objeto de um bucket S3."""
     return cliente_s3().get_object(
-        Bucket=settings.S3_BUCKET_ORIGINAIS,
+        Bucket=bucket or settings.S3_BUCKET_ORIGINAIS,
         Key=chave,
     )
+
+
+def excluir_objeto_s3(chave: str, *, bucket: str | None = None) -> None:
+    """Remove um objeto do S3."""
+    cliente_s3().delete_object(
+        Bucket=bucket or settings.S3_BUCKET_ORIGINAIS,
+        Key=chave,
+    )
+
+
+def objeto_existe_s3(chave: str, *, bucket: str | None = None) -> bool:
+    """Verifica se um objeto existe sem baixar seu conteúdo."""
+    try:
+        cliente_s3().head_object(
+            Bucket=bucket or settings.S3_BUCKET_ORIGINAIS,
+            Key=chave,
+        )
+    except Exception:
+        return False
+    return True
