@@ -33,7 +33,7 @@
                 <p>{{ arquivo.nome_original }}</p>
                 <span>{{ arquivo.enviado_em|date:"d/m/Y H:i" }}</span>
             </div>
-            <a class="link-arquivo" href="{{ arquivo.arquivo.url }}" target="_blank" rel="noopener">Acessar arquivo</a>
+            <a class="link-arquivo" href="{% url 'baixar_arquivo' arquivo.id %}" target="_blank" rel="noopener">Baixar arquivo</a>
         </li>
         {% endfor %}
     </ul>

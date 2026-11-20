@@ -16,6 +16,24 @@ services:
       timeout: 5s
       retries: 10
     networks: [rede_aplicacao]
+  localstack:
+    image: localstack/localstack:3.8
+    ports:
+      - "127.0.0.1:${PORTA_LOCALSTACK:-4566}:4566"
+    environment:
+      SERVICES: s3
+      DEBUG: ${LOCALSTACK_DEBUG:-0}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4566/_localstack/health | grep -q 's3'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks: [rede_aplicacao]
   web:
     build: .
     cpus: "0.75"
@@ -30,6 +48,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+      S3_BUCKET_ORIGINAIS: ${S3_BUCKET_ORIGINAIS:-central-arquivos-originais}
     volumes: [static_data:/app/staticfiles, media_data:/app/media]
     depends_on:
       db: {condition: service_healthy}
@@ -46,5 +69,6 @@ volumes:
   postgres_data:
   static_data:
   media_data:
+  localstack_data:
 networks:
   rede_aplicacao:
