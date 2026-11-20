@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="390" viewBox="0 0 1100 390" role="img" aria-labelledby="title desc">
+  <title id="title">Diagrama de Componentes</title><desc id="desc">Componentes lógicos da aplicação e suas relações.</desc>
+  <defs><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3z" fill="#475569"/></marker><style>.b{fill:#fff;stroke:#475569;stroke-width:2;rx:12}.t{font:700 18px Arial;fill:#0f172a}.s{font:14px Arial;fill:#334155}.l{font:13px Arial;fill:#475569}.p{stroke:#475569;stroke-width:2;fill:none;marker-end:url(#a)}</style></defs>
+  <rect width="1100" height="390" fill="#fff"/><text x="550" y="35" text-anchor="middle" class="t">Diagrama de Componentes — visão lógica</text>
+  <rect x="55" y="125" width="170" height="90" class="b"/><text x="140" y="162" text-anchor="middle" class="t">Cliente</text><text x="140" y="190" text-anchor="middle" class="s">navegador</text>
+  <rect x="290" y="125" width="180" height="90" class="b"/><text x="380" y="162" text-anchor="middle" class="t">Nginx</text><text x="380" y="190" text-anchor="middle" class="s">proxy reverso</text>
+  <rect x="535" y="125" width="200" height="90" class="b"/><text x="635" y="162" text-anchor="middle" class="t">Django + Gunicorn</text><text x="635" y="190" text-anchor="middle" class="s">regras e upload</text>
+  <rect x="800" y="75" width="220" height="80" class="b"/><text x="910" y="110" text-anchor="middle" class="t">PostgreSQL</text><text x="910" y="135" text-anchor="middle" class="s">metadados</text>
+  <rect x="800" y="220" width="220" height="80" class="b"/><text x="910" y="255" text-anchor="middle" class="t">Docker Volumes</text><text x="910" y="280" text-anchor="middle" class="s">mídia, estáticos e banco</text>
+  <path d="M225 170H290" class="p"/><text x="258" y="155" text-anchor="middle" class="l">HTTP</text><path d="M470 170H535" class="p"/><text x="502" y="155" text-anchor="middle" class="l">proxy_pass</text><path d="M735 145 C770 130 780 115 800 115" class="p"/><text x="765" y="105" class="l">SQL</text><path d="M735 195 C775 225 780 260 800 260" class="p"/><text x="765" y="235" class="l">grava e lê</text><path d="M910 155V220" class="p"/><text x="925" y="190" class="l">dados</text>
+</svg>

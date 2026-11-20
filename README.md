@@ -18,6 +18,12 @@ Os diagramas da arquitetura estão centralizados em [docs/arquitetura.md](docs/a
 
 Para consultar os diagramas completos e suas explicações, acesse [docs/arquitetura.md](docs/arquitetura.md).
 
+## Evidência da aplicação em execução
+
+A imagem abaixo registra a aplicação Django funcionando com upload realizado com sucesso e arquivos persistidos na listagem:
+
+![Aplicação Django em execução](docs/imagens/aplicacao-em-execucao.png)
+
 ## Papel de cada serviço
 
 ### `web` — Django + Gunicorn
@@ -210,6 +216,8 @@ O diagrama também deixa explícito que o Nginx lê `media_data` e `static_data`
 O diagrama abaixo não representa máquinas, containers ou volumes. Ele representa os componentes lógicos e suas responsabilidades na comunicação da aplicação.
 
 O Diagrama de Componentes está em [docs/arquitetura.md](docs/arquitetura.md). Ele apresenta a colaboração lógica entre Cliente, Nginx, Django/Gunicorn, PostgreSQL e volumes.
+
+![Diagrama de Componentes](docs/diagramas/componentes.svg)
 
 Este segundo diagrama mostra **como** os componentes colaboram. O diagrama anterior mostra **onde** eles são implantados. Portanto, ambos são utilizados com nomes diferentes e não representam a mesma visão arquitetural.
 
@@ -446,6 +454,8 @@ O `.env` é ignorado pelo Git. O `.env.example` contém somente um placeholder p
 Todos os serviços participam da rede `rede_aplicacao`. A dependência de inicialização é:
 
 O diagrama de dependências e inicialização está centralizado em [docs/arquitetura.md](docs/arquitetura.md).
+
+![Dependências e inicialização dos serviços](docs/diagramas/dependencias.svg)
 
 O `depends_on` controla a ordem de criação/inicialização, mas não garante sozinho que o serviço esteja pronto para aceitar conexões. Por isso, o healthcheck confirma a disponibilidade real do PostgreSQL e o `entrypoint.sh` ainda aguarda uma conexão antes de iniciar a aplicação.
 
