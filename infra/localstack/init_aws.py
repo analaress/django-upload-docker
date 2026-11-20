@@ -23,6 +23,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import boto3
 from botocore.config import Config
@@ -40,6 +41,7 @@ INDICE_EMAIL = os.getenv("DYNAMODB_INDICE_EMAIL", "email-index")
 FUNCAO_LAMBDA = os.getenv("LAMBDA_FUNCAO", "processar-imagem")
 LARGURA_MINIATURA = os.getenv("LARGURA_MAXIMA_MINIATURA", "300")
 CAMINHO_ZIP = os.getenv("LAMBDA_ZIP", "/lambda.zip")
+BACKUP_DIR = Path(os.getenv("BACKUP_LOCALSTACK_DIR", "/backup"))
 ROLE_LAMBDA = "arn:aws:iam::000000000000:role/lambda-role"
 STATEMENT_ID = "s3-invoke-originais"
 
@@ -184,6 +186,30 @@ def garantir_tabela(dynamodb) -> None:
     log("índice criado")
 
 
+def restaurar_backup(s3, dynamodb) -> None:
+    """Restaura um backup local somente quando os recursos estão vazios.
+
+    O backup é opcional: se o diretório não existir ou não tiver
+    ``manifest.json``, o provisionamento segue normalmente. A restauração é
+    feita apenas uma vez, no primeiro start após a troca de volume; nos starts
+    seguintes o S3/DynamoDB já terão dados e o backup será ignorado.
+    """
+    if not BACKUP_DIR.is_dir() or not (BACKUP_DIR / "manifest.json").is_file():
+        return
+
+    try:
+        from backup_localstack import importar
+    except ImportError:
+        log("utilitário de backup não encontrado; seguindo sem restauração")
+        return
+
+    log(f"backup encontrado em {BACKUP_DIR}; restaurando somente o que estiver vazio")
+    try:
+        importar(BACKUP_DIR, somente_se_vazio=True)
+    except Exception as erro:  # pragma: no cover - falha visível nos logs
+        log(f"aviso: não foi possível restaurar o backup: {erro}")
+
+
 def ler_zip_lambda() -> bytes:
     with open(CAMINHO_ZIP, "rb") as arquivo:
         conteudo = arquivo.read()
@@ -315,6 +341,7 @@ def main() -> int:
     garantir_bucket(s3, BUCKET_ORIGINAIS)
     garantir_bucket(s3, BUCKET_PROCESSADOS)
     garantir_tabela(dynamodb)
+    restaurar_backup(s3, dynamodb)
 
     configuracao_funcao = garantir_lambda(lambda_client)
     arn_funcao = configuracao_funcao["FunctionArn"]

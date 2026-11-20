@@ -18,20 +18,27 @@ services:
     networks: [rede_aplicacao]
 
   localstack:
-    image: localstack/localstack:3.8
+    # A edição Community do LocalStack não persiste recursos nativamente
+    # (PERSISTENCE=1 é recurso Pro). Esta imagem é um drop-in da 3.8.1 com
+    # persistência comunitária para S3 e DynamoDB.
+    image: gresau/localstack-persist:3.8.1
     ports:
       - "127.0.0.1:${PORTA_LOCALSTACK:-4566}:4566"
     environment:
       SERVICES: s3,dynamodb,lambda
       DEBUG: ${LOCALSTACK_DEBUG:-0}
-      PERSISTENCE: "1"
+      PERSIST_DEFAULT: "0"
+      PERSIST_S3: "1"
+      PERSIST_DYNAMODB: "1"
+      PERSIST_FREQUENCY: "2"
       LAMBDA_DOCKER_NETWORK: rede_aplicacao
       LAMBDA_REMOVE_CONTAINERS: "1"
       AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
       DOCKER_HOST: unix:///var/run/docker.sock
     volumes:
-      - localstack_data:/var/lib/localstack
+      - localstack_persist_data:/persisted-data
       - /var/run/docker.sock:/var/run/docker.sock
+    stop_grace_period: 30s
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:4566/_localstack/health >/dev/null"]
       interval: 5s
@@ -45,6 +52,7 @@ services:
       context: .
       dockerfile: infra/localstack/Dockerfile
     environment:
+      BACKUP_LOCALSTACK_DIR: /backup
       AWS_ENDPOINT_URL: http://localstack:4566
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
@@ -55,6 +63,11 @@ services:
       DYNAMODB_INDICE_EMAIL: ${DYNAMODB_INDICE_EMAIL:-email-index}
       LAMBDA_FUNCAO: ${LAMBDA_FUNCAO:-processar-imagem}
       LARGURA_MAXIMA_MINIATURA: ${LARGURA_MAXIMA_MINIATURA:-300}
+    volumes:
+      # Backup opcional dos dados antigos. O provisionador restaura apenas
+      # quando os buckets/tabela ainda estão vazios. O volume é gravável para
+      # permitir exportar um backup manual com backup_localstack.py.
+      - ./.localstack-backup:/backup
     depends_on:
       localstack:
         condition: service_healthy
@@ -108,7 +121,7 @@ services:
 volumes:
   postgres_data:
   static_data:
-  localstack_data:
+  localstack_persist_data:
 
 networks:
   rede_aplicacao:

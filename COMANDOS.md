@@ -725,6 +725,11 @@ O `provisionador` roda de novo de forma **idempotente**: ele reconhece os
 buckets, a tabela, o índice e a função existentes, atualiza o código da Lambda
 e reaplica a notificação do S3.
 
+A persistência de S3 e DynamoDB é feita pela imagem
+`gresau/localstack-persist:3.8.1`, que grava no volume
+`localstack_persist_data` (montado em `/persisted-data`). A Lambda e o evento
+S3 não são persistidos; o provisionador os recria a cada `up`.
+
 Depois do reinício, confirme:
 
 - a conta continua no DynamoDB;
@@ -741,11 +746,43 @@ docker compose down -v
 docker compose up --build -d
 ```
 
-Isso remove `postgres_data`, `static_data` e `localstack_data`. O
+Isso remove `postgres_data`, `static_data` e `localstack_persist_data`. O
 provisionador recria os recursos AWS simulados; as contas e imagens antigas
 **não** voltam.
 
-### 7.3 Rebuild após mudança de código
+### 7.3 Backup e restauração
+
+O serviço `provisionador` monta `./.localstack-backup` em `/backup`. No
+primeiro start com o volume novo, ele restaura o backup automaticamente
+**somente se** os buckets e a tabela estiverem vazios. Depois disso, o backup
+é ignorado para não sobrescrever dados novos.
+
+O diretório `.localstack-backup/` é ignorado pelo Git. Ele pode conter hashes
+de senha (nunca senhas em texto puro) e imagens; não faça commit dele.
+
+Backup manual:
+
+```bash
+docker compose run --rm provisionador \
+  python backup_localstack.py exportar --dir /backup
+```
+
+Restauração manual (faça depois que o provisionador já criou a tabela e os
+buckets, por exemplo após um `docker compose up -d`):
+
+```bash
+docker compose run --rm provisionador \
+  python backup_localstack.py importar --dir /backup --somente-se-vazio
+```
+
+Para começar do zero, remova o backup e o volume:
+
+```bash
+rm -rf .localstack-backup
+docker compose down -v
+```
+
+### 7.4 Rebuild após mudança de código
 
 O código é copiado para dentro da imagem no build (não há bind mount da
 aplicação). Depois de alterar arquivos em `app/`, `lambda/` ou `infra/`:
@@ -762,6 +799,11 @@ docker compose rm -sf provisionador
 docker compose up -d --build provisionador
 docker compose logs -f provisionador
 ```
+
+Se a interface continuar com o CSS/JS antigo, confirme que o container `web`
+foi realmente recriado (`docker compose ps`) e recarregue a página. O Nginx
+serve `/static/` com `Cache-Control: no-cache` justamente para evitar esse
+problema; o `web` antigo não tem o arquivo `app.js` novo.
 
 ---
 
@@ -793,6 +835,16 @@ manualmente:
 docker volume ls | grep media_data
 # confira o nome exato antes de remover
 docker volume rm <nome_do_volume_media_data>
+```
+
+O volume `localstack_data` da imagem oficial antiga também não é mais usado;
+o novo é `localstack_persist_data`. Depois de confirmar que a conta e as
+imagens foram restauradas, remova o antigo se quiser liberar espaço:
+
+```bash
+docker volume ls | grep localstack_data
+# confira o nome exato antes de remover
+docker volume rm <nome_do_volume_localstack_data>
 ```
 
 ---
@@ -930,10 +982,12 @@ serviço conflitante ou ajuste o mapeamento no arquivo.
 
 ### LocalStack pede token de autenticação
 
-O projeto fixa `localstack/localstack:3.8` justamente para evitar a exigência
-de `LOCALSTACK_AUTH_TOKEN` das versões mais novas. Não troque a tag sem antes
-ler a documentação de licenciamento. Se for usar uma versão nova, configure o
-token no `.env`/Compose; o código da aplicação não muda.
+O projeto usa `gresau/localstack-persist:3.8.1`, derivada da
+`localstack/localstack:3.8.1`, justamente para evitar a exigência de
+`LOCALSTACK_AUTH_TOKEN` das versões mais novas e manter a persistência de S3 e
+DynamoDB sem o plano Pro. Não troque a tag sem antes ler a documentação de
+licenciamento. Se for usar uma versão nova, configure o token no
+`.env`/Compose; o código da aplicação não muda.
 
 ### Erro de plataforma em Mac com Apple Silicon
 
@@ -945,8 +999,11 @@ DOCKER_DEFAULT_PLATFORM=linux/amd64 docker compose up --build -d
 
 ### Dados “sumiram” depois de `down -v`
 
-`down -v` remove os volumes. Não há backup automático. Para evitar perda,
-use `docker compose down` (sem `-v`) no dia a dia.
+`down -v` remove os volumes, incluindo `localstack_persist_data`. Use
+`docker compose down` (sem `-v`) no dia a dia. O projeto tem um snapshot
+manual em `.localstack-backup/`, mas ele **não** é atualizado continuamente;
+para um backup atualizado, rode o comando de exportação da seção 7.3 antes de
+remover os volumes.
 
 ---
 

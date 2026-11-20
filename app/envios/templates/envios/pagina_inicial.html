@@ -4,22 +4,21 @@
 
 <section class="painel-topo">
     <div>
-        <p class="rotulo">Área privada</p>
-        <h1>Suas imagens</h1>
+        <h2>Suas imagens</h2>
         <p class="subtitulo">
             Envie imagens para o bucket <code>{{ bucket_originais }}</code>.
             As miniaturas são geradas automaticamente pela Lambda no bucket
             <code>{{ bucket_processados }}</code>.
         </p>
     </div>
-    <a class="botao-atualizar" href="{% url 'pagina_inicial' %}">↻&nbsp;&nbsp;Atualizar lista</a>
+    <a class="botao-atualizar" href="{% url 'pagina_inicial' %}">Atualizar</a>
 </section>
 
 <section class="zona-upload-cartao">
     <form method="post" action="{% url 'enviar_arquivo' %}" enctype="multipart/form-data" class="formulario">
         {% csrf_token %}
         <label for="id_imagens" class="botao-upload">
-            <svg class="icone-upload" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <svg class="icone-upload" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M16 16l-4-4-4 4" />
                 <path d="M12 12v8" />
                 <path d="M20 16.5a4.5 4.5 0 0 0-2.8-4.2A5.5 5.5 0 0 0 6.5 10a4 4 0 0 0 .5 8H8" />
@@ -43,7 +42,6 @@
         <h2>Arquivos no S3 <span>({{ itens|length }})</span></h2>
         <p class="legenda">As miniaturas aparecem automaticamente assim que a Lambda termina.</p>
     </div>
-    <span class="selo-localstack">LocalStack · S3</span>
 </div>
 
 {% if itens %}

@@ -60,7 +60,7 @@ flowchart LR
 
         static[("static_data<br/>CSS coletado")]
         pg[("postgres_data")]
-        ls[("localstack_data")]
+        ls[("localstack_persist_data")]
     end
 
     navegador -->|"HTTP"| nginx
@@ -367,21 +367,29 @@ flowchart LR
     db["db<br/>PostgreSQL"] --- pg[("postgres_data")]
     web["web<br/>Django"] --- st[("static_data")]
     nginx["nginx"] --- st
-    localstack["localstack"] --- ls[("localstack_data")]
+    localstack["localstack"] --- ls[("localstack_persist_data")]
 ```
 
 | Volume | Conteúdo | Consequência de apagar |
 |---|---|---|
 | `postgres_data` | Sessões, admin e metadados/auditoria | Perde sessões e histórico; contas e imagens continuam no LocalStack |
 | `static_data` | CSS coletado por `collectstatic` | O `web` recria no próximo start |
-| `localstack_data` | Estado do S3, DynamoDB e Lambda | Perde contas, imagens, miniaturas e configuração da Lambda; o provisionador recria os recursos vazios |
+| `localstack_persist_data` | S3 e DynamoDB persistidos em `/persisted-data` | Perde contas, imagens e miniaturas; o provisionador recria os recursos vazios |
 
 O volume antigo `media_data` **não é mais usado**. O conteúdo das imagens fica
 no S3, que é a fonte de verdade. O Nginx não serve `/media/`, e o model não
 possui `FileField` local.
 
+A edição Community oficial do LocalStack não persiste recursos entre
+reinícios: `PERSISTENCE=1` é um recurso Pro. Por isso o Compose usa
+`gresau/localstack-persist:3.8.1`, uma imagem derivada da 3.8.1 com
+`PERSIST_S3=1` e `PERSIST_DYNAMODB=1`. A Lambda e o evento S3 não precisam ser
+persistidos: o provisionador os recria de forma idempotente a cada `up`.
+
 `docker compose down` preserva os volumes. `docker compose down -v` apaga
-todos os dados e deve ser usado apenas em ambiente descartável.
+todos os dados e deve ser usado apenas em ambiente descartável. O diretório
+`.localstack-backup/` guarda um snapshot manual (fora do Git) que o
+provisionador restaura apenas quando os buckets/tabela estão vazios.
 
 ---
 
@@ -492,7 +500,7 @@ duplicada de forma explícita e documentada.
 | Evento S3 → Lambda | `configurar_eventos` em `init_aws.py` |
 | Rede dos serviços | `rede_aplicacao` (nome explícito no Compose) |
 | Banco persistente | `postgres_data:/var/lib/postgresql/data` |
-| Estado AWS simulado | `localstack_data:/var/lib/localstack` |
+| Estado AWS simulado | `localstack_persist_data:/persisted-data` |
 | Estáticos | `static_data:/app/staticfiles` e `static_data:/var/www/static:ro` |
 | Socket do Docker | `/var/run/docker.sock:/var/run/docker.sock` no `localstack` |
 

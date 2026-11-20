@@ -5,18 +5,15 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block titulo %}Central de Arquivos{% endblock %}</title>
-    <link rel="stylesheet" href="{% static 'envios/estilos.css' %}">
+    <link rel="stylesheet" href="{% static 'envios/estilos.css' %}?v=20261120">
 </head>
 <body>
     <div class="pagina">
         <header class="topo">
-            <a class="marca" href="{% url 'pagina_inicial' %}">
-                <span class="marca-icone">S3</span>
-                <span class="marca-texto">
-                    Central de Arquivos
-                    <small>Django · S3 · DynamoDB · Lambda</small>
-                </span>
-            </a>
+            <div class="marca">
+                <h1>Central de Arquivos</h1>
+                <p>Django · S3 · DynamoDB · Lambda</p>
+            </div>
 
             <nav class="navegacao" aria-label="Navegação principal">
                 {% if request.usuario %}
@@ -44,10 +41,10 @@
         {% block conteudo %}{% endblock %}
 
         <footer class="rodape">
-            <span>Imagens armazenadas no Amazon S3 simulado pelo LocalStack.</span>
-            <span>Contas no Amazon DynamoDB · Miniaturas geradas por AWS Lambda.</span>
+            <span>Imagens no Amazon S3 simulado pelo LocalStack.</span>
+            <span>Contas no DynamoDB · Miniaturas geradas por AWS Lambda.</span>
         </footer>
     </div>
-    <script src="{% static 'envios/app.js' %}" defer></script>
+    <script src="{% static 'envios/app.js' %}?v=20261120" defer></script>
 </body>
 </html>

@@ -67,7 +67,7 @@ flowchart LR
 
         static[("static_data<br/>CSS coletado")]
         pg[("postgres_data")]
-        ls[("localstack_data")]
+        ls[("localstack_persist_data")]
     end
 
     navegador -->|"localhost:8090"| nginx
@@ -91,7 +91,7 @@ flowchart LR
 | Serviço | Imagem / build | Porta publicada | Função |
 |---|---|---|---|
 | `db` | `postgres:16-alpine` | `127.0.0.1:15432` | Sessões Django, admin e metadados/auditoria |
-| `localstack` | `localstack/localstack:3.8` | `127.0.0.1:4566` | S3, DynamoDB e Lambda simulados |
+| `localstack` | `gresau/localstack-persist:3.8.1` | `127.0.0.1:4566` | S3, DynamoDB e Lambda simulados, com persistência de S3/DynamoDB |
 | `provisionador` | `infra/localstack/Dockerfile` | — | Cria buckets, tabela, índice, Lambda e evento S3 (one-shot) |
 | `web` | `Dockerfile` | — | Django + Gunicorn na porta interna `8000` |
 | `nginx` | `nginx:1.27-alpine` | `localhost:8090` | Proxy reverso e arquivos estáticos |
@@ -102,7 +102,7 @@ Volumes:
 |---|---|
 | `postgres_data` | Banco PostgreSQL (sessões, admin, metadados) |
 | `static_data` | CSS coletado por `collectstatic`; lido pelo Nginx |
-| `localstack_data` | Estado do LocalStack (S3, DynamoDB e código da Lambda) |
+| `localstack_persist_data` | S3 e DynamoDB persistidos em `/persisted-data` (imagem `localstack-persist`) |
 
 O volume antigo `media_data` **não é mais usado**: o conteúdo das imagens agora
 fica no S3, que é a fonte de verdade. Essa remoção é intencional e está
@@ -464,16 +464,36 @@ Lambda é o evento `s3:ObjectCreated:*` configurado no LocalStack. Não existe
 botão nem endpoint que chame a Lambda manualmente; a única forma de gerar a
 miniatura é o upload no bucket correto.
 
-### LocalStack 3.8 e licenciamento
+### LocalStack 3.8, licenciamento e persistência
 
-O Compose fixa `localstack/localstack:3.8` para manter o funcionamento sem
-token de autenticação e com persistência local. Versões mais novas do
-LocalStack (a partir das mudanças de licenciamento de 2025/2026) podem exigir
-uma conta/workspace e um `LOCALSTACK_AUTH_TOKEN` (plano Hobby gratuito para uso
-não comercial ou planos pagos). Se o ambiente do avaliador usar uma versão
-nova, será necessário criar o token e adicioná-lo ao `.env`/Compose; o código
-da aplicação não muda. Consulte a documentação oficial de licenciamento antes
-de trocar a tag da imagem.
+O Compose fixa `gresau/localstack-persist:3.8.1`, uma imagem derivada da
+`localstack/localstack:3.8.1` que adiciona persistência comunitária para S3 e
+DynamoDB. A edição Community oficial **não** persiste recursos nativamente:
+`PERSISTENCE=1` é um recurso Pro e não mantém buckets/objetos entre reinícios.
+Por isso o projeto usa:
+
+```yaml
+PERSIST_DEFAULT: "0"
+PERSIST_S3: "1"
+PERSIST_DYNAMODB: "1"
+PERSIST_FREQUENCY: "2"
+```
+
+O volume `localstack_persist_data` é montado em `/persisted-data`. A Lambda e
+o evento `ObjectCreated` não precisam ser persistidos: o provisionador os
+recria/atualiza de forma idempotente a cada `up`.
+
+Versões mais novas do LocalStack (a partir das mudanças de licenciamento de
+2025/2026) podem exigir uma conta/workspace e um `LOCALSTACK_AUTH_TOKEN`. A
+imagem 3.8.1 continua funcionando sem token. Consulte a documentação oficial
+de licenciamento antes de trocar a tag.
+
+O diretório `.localstack-backup/` é opcional e fica fora do Git. Ele guarda um
+backup de contas (DynamoDB) e imagens (S3) para a migração de uma instalação
+antiga. No primeiro start com o volume novo, o provisionador restaura o backup
+somente se os buckets/tabela estiverem vazios; depois disso o backup é
+ignorado. Para criar um backup manual, veja
+[COMANDOS.md](COMANDOS.md#73-backup-e-restauração).
 
 A Lambda do LocalStack executa containers Docker reais. Por isso o serviço
 monta `/var/run/docker.sock` e usa `LAMBDA_DOCKER_NETWORK=rede_aplicacao`.
@@ -520,6 +540,12 @@ docker compose up --build -d
 
 Ou use o atalho `./executar.sh`, que confere Docker/Compose, sobe os containers
 e espera o provisionamento terminar.
+
+> **Depois de alterar arquivos em `app/`, `lambda/` ou `infra/`, rode novamente
+> `docker compose up -d --build` (ou `./executar.sh`).** O código é copiado
+> para dentro da imagem no build; um `docker compose up -d` sem `--build`
+> reutiliza a imagem antiga e o navegador continua vendo o CSS/JS anterior.
+> O Nginx serve `/static/` com `no-cache` para evitar cache de desenvolvimento.
 
 Acesse **http://localhost:8090**. O LocalStack fica em
 **http://localhost:4566** e o PostgreSQL em **localhost:15432**.
@@ -594,10 +620,14 @@ obrigatórios:
 
 ### Persistência e reinício
 
-- [ ] `docker compose down` (sem `-v`) e `docker compose up -d`: dados do
-      PostgreSQL, S3, DynamoDB e Lambda continuam.
-- [ ] `docker compose down -v` em ambiente descartável: tudo é recriado pelo
-      provisionador no próximo `up`.
+- [ ] `docker compose down` (sem `-v`) e `docker compose up -d`: a conta no
+      DynamoDB, as imagens no S3 e a sessão no PostgreSQL continuam. A Lambda e
+      o evento S3 são recriados pelo provisionador.
+- [ ] `docker compose down -v` em ambiente descartável: o volume
+      `localstack_persist_data` é removido; o provisionador recria os recursos
+      vazios no próximo `up`.
+- [ ] Se a interface parecer antiga, confirmar que o `web` foi reconstruído
+      com `docker compose up -d --build` e recarregar a página.
 
 ---
 
@@ -606,7 +636,9 @@ obrigatórios:
 O shell do assistente roda em um sandbox Flatpak/bwrap e não tem o binário
 `docker`. Porém, o LocalStack do ambiente estava em execução e acessível em
 `127.0.0.1:4566`, então a integração real com S3, DynamoDB e Lambda foi
-validada, além dos testes locais:
+validada, além dos testes locais. A interface nova também foi validada no
+servidor de desenvolvimento em `127.0.0.1:8099`; o container `web` em
+`localhost:8090` só passa a servi-la depois do rebuild.
 
 | Verificação | Resultado |
 |---|---|

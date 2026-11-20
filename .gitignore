@@ -71,6 +71,7 @@ test-results/
 .localstack/
 localstack_data/
 .localstack-data/
+.localstack-backup/
 docker-compose.override.yml
 *.pid
 

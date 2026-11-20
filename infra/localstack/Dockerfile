@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements-provisionamento.txt
 
 COPY lambda/ /origem-lambda/
 COPY infra/localstack/init_aws.py .
+COPY infra/localstack/backup_localstack.py .
 
 # O wheel é baixado para a plataforma x86_64 do runtime Lambda, e não para a
 # arquitetura/ambiente do provisionador.
