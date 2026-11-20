@@ -1,0 +1,5 @@
+{% extends "envios/base.html" %}{% block conteudo %}<a class="botao" href="{% url 'enviar_arquivo' %}">Enviar novo
+    arquivo</a>
+<h2>Arquivos enviados</h2>{% if arquivos %}<ul>{% for arquivo in arquivos %}<li><a href="{{ arquivo.arquivo.url }}"
+            target="_blank">{{ arquivo.nome_original }}</a> - {{ arquivo.enviado_em|date:"d/m/Y H:i" }}</li>{% endfor %}
+</ul>{% else %}<p>Nenhum arquivo enviado ainda.</p>{% endif %}{% endblock %}
