@@ -73,6 +73,11 @@ if [ "${estado:-}" != "exited" ]; then
   exit 1
 fi
 
+# Relê o nginx/default.conf (bind mount) para aplicar o Cache-Control dos
+# estáticos sem depender de o container ter sido recriado.
+echo "Aplicando a configuração do Nginx..."
+docker compose restart nginx >/dev/null
+
 echo
 docker compose ps
 echo
