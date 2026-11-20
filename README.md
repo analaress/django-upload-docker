@@ -773,7 +773,7 @@ O arquivo `forms.py` valida a entrada no backend, mas atualmente verifica apenas
 
 O diagrama de sequência do upload está em [docs/arquitetura.md](docs/arquitetura.md).
 
-![Fluxo do upload de arquivo](docs/diagramas/upload.svg)
+![Diagrama de sequência UML do upload](docs/diagramas/sequencia-upload.svg)
 
 ### 8. Análise técnica da solução
 
